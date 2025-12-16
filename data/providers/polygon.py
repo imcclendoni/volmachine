@@ -6,7 +6,7 @@ Documentation: https://polygon.io/docs/options
 """
 
 import os
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import requests
@@ -214,38 +214,127 @@ class PolygonProvider(DataProvider):
     def get_option_chain(
         self,
         symbol: str,
-        expiration: Optional[date] = None
+        expiration: Optional[date] = None,
+        min_dte: int = 0,
+        max_dte: int = 90
     ) -> OptionChain:
-        """Get option chain with quotes and Greeks from Polygon."""
+        """
+        Get option chain with quotes and Greeks from Polygon.
+        
+        Args:
+            symbol: Underlying symbol
+            expiration: Specific expiration date (if None, fetches range)
+            min_dte: Minimum days to expiration (default 0)
+            max_dte: Maximum days to expiration (default 90)
+        
+        Returns:
+            OptionChain with contracts and expirations
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
         # Get current underlying price
         underlying_price = self.get_current_price(symbol)
         
-        # Build params for contract lookup
+        today = date.today()
+        
+        # Build params for contract lookup with DATE RANGE
         params = {
             'underlying_ticker': symbol,
             'limit': 1000,
+            'order': 'asc',
+            'sort': 'expiration_date',
         }
+        
         if expiration:
+            # Specific expiration requested
             params['expiration_date'] = expiration.isoformat()
+        else:
+            # Use date range filtering - THIS IS THE FIX
+            min_exp = today + timedelta(days=min_dte)
+            max_exp = today + timedelta(days=max_dte)
+            params['expiration_date.gte'] = min_exp.isoformat()
+            params['expiration_date.lte'] = max_exp.isoformat()
         
-        # Get contracts
-        data = self._request("/v3/reference/options/contracts", params=params)
-        contracts_meta = data.get('results', [])
+        # Fetch contracts with PAGINATION
+        all_contracts_meta = []
+        next_url = None
+        page_count = 0
+        max_pages = 10  # Safety limit
         
-        if not contracts_meta:
-            raise DataProviderError(f"No options contracts found for {symbol}")
+        while page_count < max_pages:
+            if next_url:
+                # Use next_url for pagination (Polygon returns full URL)
+                response = self._session.get(next_url, params={'apiKey': self.api_key})
+                if response.status_code != 200:
+                    break
+                data = response.json()
+            else:
+                data = self._request("/v3/reference/options/contracts", params=params)
+            
+            results = data.get('results', [])
+            all_contracts_meta.extend(results)
+            page_count += 1
+            
+            # Check for next page
+            next_url = data.get('next_url')
+            if not next_url:
+                break
+        
+        logger.info(f"Polygon {symbol}: fetched {len(all_contracts_meta)} contracts in {page_count} pages")
+        
+        if not all_contracts_meta:
+            # Log diagnostic info
+            logger.warning(f"No contracts found for {symbol} in DTE range {min_dte}-{max_dte}")
+            
+            # FALLBACK: Try to find ANY available expiration
+            fallback_params = {
+                'underlying_ticker': symbol,
+                'limit': 100,
+                'order': 'asc',
+                'sort': 'expiration_date',
+                'expiration_date.gte': today.isoformat(),  # Just future expiries
+            }
+            fallback_data = self._request("/v3/reference/options/contracts", params=fallback_params)
+            fallback_results = fallback_data.get('results', [])
+            
+            if fallback_results:
+                logger.warning(f"FALLBACK: Found {len(fallback_results)} contracts outside target DTE range")
+                all_contracts_meta = fallback_results
+                # Mark that we used fallback (can be used to mark candidates REVIEW)
+                # This is logged for awareness
+            else:
+                raise DataProviderError(f"No options contracts found for {symbol}")
+        
+        # Collect unique expirations
+        expirations_set = set()
+        for meta in all_contracts_meta:
+            exp_str = meta.get('expiration_date')
+            if exp_str:
+                expirations_set.add(date.fromisoformat(exp_str))
+        
+        sorted_expirations = sorted(expirations_set)
+        
+        # Log expiration info
+        if sorted_expirations:
+            min_exp = sorted_expirations[0]
+            max_exp = sorted_expirations[-1]
+            min_dte_found = (min_exp - today).days
+            max_dte_found = (max_exp - today).days
+            in_range = len([e for e in sorted_expirations if min_dte <= (e - today).days <= max_dte])
+            logger.info(f"Polygon {symbol}: {len(sorted_expirations)} expirations, "
+                       f"range: {min_exp} ({min_dte_found}d) to {max_exp} ({max_dte_found}d), "
+                       f"{in_range} in target DTE window")
         
         # Get snapshots for quotes and Greeks
         contracts = []
-        expirations_set = set()
-        chain_timestamp = datetime.now()  # Will be updated if API provides
+        chain_timestamp = datetime.now()
         
-        for meta in contracts_meta:
+        for meta in all_contracts_meta:
             contract_symbol = meta.get('ticker')
             exp_date = date.fromisoformat(meta.get('expiration_date'))
-            expirations_set.add(exp_date)
             
-            # Get snapshot for this contract (quotes + Greeks)
+            # Get snapshot for this contract
             try:
                 snapshot = self._request(
                     f"/v3/snapshot/options/{symbol}/{contract_symbol}"
@@ -264,13 +353,12 @@ class PolygonProvider(DataProvider):
                         vega=greeks_data.get('vega', 0),
                     )
                 
-                # Use API timestamp if available, not datetime.now()
-                # last_updated is in nanoseconds
+                # Use API timestamp if available
                 quote_timestamp = None
                 if details.get('last_updated'):
                     try:
                         quote_timestamp = datetime.fromtimestamp(details['last_updated'] / 1e9)
-                        chain_timestamp = quote_timestamp  # Update chain timestamp
+                        chain_timestamp = quote_timestamp
                     except (ValueError, OSError):
                         quote_timestamp = datetime.now()
                 else:
@@ -297,11 +385,13 @@ class PolygonProvider(DataProvider):
                 # Skip contracts without snapshots
                 continue
         
+        logger.info(f"Polygon {symbol}: got snapshots for {len(contracts)} contracts")
+        
         return OptionChain(
             symbol=symbol,
             underlying_price=underlying_price,
             timestamp=chain_timestamp,
-            expirations=sorted(expirations_set),
+            expirations=sorted_expirations,
             contracts=contracts
         )
     
