@@ -33,7 +33,7 @@ symbols:
     name: "S&P 500 ETF"
     type: "etf"
     tier: 1
-    enabled: false  # Disabled for focused testing
+    enabled: true
     min_volume: 1000
     min_open_interest: 5000
     max_bid_ask_pct: 1.5
@@ -57,7 +57,7 @@ symbols:
     name: "Russell 2000 ETF"
     type: "etf"
     tier: 1
-    enabled: false  # Disabled for focused testing
+    enabled: true
     min_volume: 300
     min_open_interest: 1500
     max_bid_ask_pct: 2.5
@@ -93,7 +93,7 @@ symbols:
     name: "Technology Select Sector"
     type: "etf"
     tier: 2
-    enabled: false  # Disabled for faster testing
+    enabled: true
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -196,7 +196,7 @@ symbols:
     name: "20+ Year Treasury ETF"
     type: "etf"
     tier: 2
-    enabled: false  # Disabled for faster testing
+    enabled: true
     min_volume: 300
     min_open_interest: 1500
     max_bid_ask_pct: 2.5
@@ -250,7 +250,7 @@ symbols:
     name: "Apple Inc."
     type: "equity"
     tier: 3
-    enabled: false  # Disabled for faster testing
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
     min_volume: 300
@@ -262,7 +262,7 @@ symbols:
     name: "Microsoft Corp."
     type: "equity"
     tier: 3
-    enabled: false  # Disabled for faster testing
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
     min_volume: 250
@@ -310,7 +310,7 @@ symbols:
     name: "NVIDIA Corp."
     type: "equity"
     tier: 3
-    enabled: false  # Disabled for faster testing
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
     high_vol: true

@@ -21,6 +21,10 @@ def export_report_json(
     do_not_trade_reasons: list[str] = None,
     portfolio: dict = None,
     output_dir: str = './logs/reports',
+    # New diagnostic fields
+    provider_status: dict = None,
+    universe_scan: dict = None,
+    vrp_metrics: list[dict] = None,
 ) -> Path:
     """
     Export daily report as JSON.
@@ -34,6 +38,9 @@ def export_report_json(
         do_not_trade_reasons: Reasons if trading blocked
         portfolio: Portfolio state dict
         output_dir: Directory to write report
+        provider_status: { connected: bool, source: str, last_run: str }
+        universe_scan: { symbols_scanned: int, with_data: int, with_edges: int, with_trades: int, symbol_list: [...] }
+        vrp_metrics: [{ symbol: str, atm_iv: float, rv_20: float, iv_rv_ratio: float, threshold: float }]
         
     Returns:
         Path to the written JSON file
@@ -47,6 +54,22 @@ def export_report_json(
         'generated_at': datetime.now().isoformat(),
         'trading_allowed': trading_allowed,
         'do_not_trade_reasons': do_not_trade_reasons or [],
+        
+        # New diagnostic fields
+        'provider_status': provider_status or {
+            'connected': False,
+            'source': 'unknown',
+            'last_run': datetime.now().isoformat(),
+        },
+        'universe_scan': universe_scan or {
+            'symbols_scanned': 0,
+            'symbols_with_data': 0,
+            'symbols_with_edges': 0,
+            'symbols_with_trades': 0,
+            'symbol_list': [],
+        },
+        'vrp_metrics': vrp_metrics or [],
+        
         'regime': _serialize_regime(regime),
         'edges': [_serialize_edge(e) for e in edges],
         'candidates': [_serialize_candidate(c) for c in candidates],

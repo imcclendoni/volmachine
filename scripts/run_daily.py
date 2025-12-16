@@ -114,8 +114,43 @@ def main():
         for path in saved:
             print(f"  - {path}")
         
-        # Also export JSON for Desk UI
+        # Also export JSON for Desk UI with diagnostics
         from engine.report_json import export_report_json
+        from datetime import datetime
+        
+        # Build provider status
+        provider_status = {
+            'connected': engine.provider is not None,
+            'source': engine.provider.__class__.__name__ if engine.provider else 'none',
+            'last_run': datetime.now().isoformat(),
+        }
+        
+        # Build universe scan summary
+        symbols_scanned = list(engine.get_enabled_symbols())
+        symbols_with_edges = list(set(e.symbol for e in report.edges))
+        symbols_with_trades = list(set(c.symbol for c in report.candidates if c.recommendation == 'TRADE'))
+        
+        universe_scan = {
+            'symbols_scanned': len(symbols_scanned),
+            'symbols_with_data': len(symbols_scanned),  # Assume all scanned have data for now
+            'symbols_with_edges': len(symbols_with_edges),
+            'symbols_with_trades': len(symbols_with_trades),
+            'symbol_list': symbols_scanned,
+        }
+        
+        # Build VRP metrics from edge signals
+        vrp_metrics = []
+        for edge in report.edges:
+            if edge.edge_type == 'vrp':
+                vrp_metrics.append({
+                    'symbol': edge.symbol,
+                    'atm_iv': edge.metrics.get('atm_iv', 0),
+                    'rv_20': edge.metrics.get('rv_20', 0),
+                    'iv_rv_ratio': edge.metrics.get('iv_rv_ratio', 0),
+                    'threshold': 1.12,  # Default VRP threshold
+                    'status': 'ABOVE_THRESHOLD' if edge.metrics.get('iv_rv_ratio', 0) >= 1.12 else 'BELOW_THRESHOLD',
+                })
+        
         json_path = export_report_json(
             report_date=run_date,
             regime=report.regime,
@@ -124,6 +159,9 @@ def main():
             trading_allowed=report.trading_allowed,
             do_not_trade_reasons=report.do_not_trade_reasons,
             output_dir=args.output,
+            provider_status=provider_status,
+            universe_scan=universe_scan,
+            vrp_metrics=vrp_metrics,
         )
         print(f"  - {json_path}")
     

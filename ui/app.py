@@ -470,6 +470,94 @@ def main():
         </div>
         """, unsafe_allow_html=True)
 
+    # PROVIDER STATUS & UNIVERSE SUMMARY
+    st.markdown("### 🔌 DATA STATUS")
+    ps_col, us_col = st.columns(2)
+    
+    # Provider Status
+    provider = report.get('provider_status', {})
+    provider_connected = provider.get('connected', False)
+    provider_source = provider.get('source', 'unknown')
+    provider_last_run = provider.get('last_run', 'N/A')
+    
+    with ps_col:
+        if provider_connected:
+            st.markdown(f"""
+            <div style="background: rgba(6, 78, 59, 0.2); border: 1px solid #10b981; border-radius: 8px; padding: 20px;">
+                <div style="color: #10b981; font-weight: 700; font-size: 14px;">✓ PROVIDER CONNECTED</div>
+                <div style="color: #94a3b8; font-size: 12px; margin-top: 8px;">Source: <span style="color: #fff;">{provider_source}</span></div>
+                <div style="color: #94a3b8; font-size: 11px; margin-top: 4px;">Last Run: {provider_last_run[:19] if len(provider_last_run) > 19 else provider_last_run}</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.markdown(f"""
+            <div style="background: rgba(127, 29, 29, 0.2); border: 1px solid #ef4444; border-radius: 8px; padding: 20px;">
+                <div style="color: #ef4444; font-weight: 700; font-size: 14px;">✗ NO PROVIDER</div>
+                <div style="color: #fca5a5; font-size: 12px; margin-top: 8px;">Check API key configuration</div>
+            </div>
+            """, unsafe_allow_html=True)
+    
+    # Universe Summary
+    universe = report.get('universe_scan', {})
+    symbols_scanned = universe.get('symbols_scanned', 0)
+    symbols_with_edges = universe.get('symbols_with_edges', 0)
+    symbols_with_trades = universe.get('symbols_with_trades', 0)
+    symbol_list = universe.get('symbol_list', [])
+    
+    with us_col:
+        st.markdown(f"""
+        <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid #38bdf8; border-radius: 8px; padding: 20px;">
+            <div style="color: #38bdf8; font-weight: 700; font-size: 14px;">🔍 UNIVERSE SCAN</div>
+            <div style="display: flex; justify-content: space-between; margin-top: 12px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5rem; color: #fff; font-weight: 700;">{symbols_scanned}</div>
+                    <div style="color: #94a3b8; font-size: 10px;">SCANNED</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5rem; color: #f59e0b; font-weight: 700;">{symbols_with_edges}</div>
+                    <div style="color: #94a3b8; font-size: 10px;">EDGES</div>
+                </div>
+                <div style="text-align: center;">
+                    <div style="font-size: 1.5rem; color: #10b981; font-weight: 700;">{symbols_with_trades}</div>
+                    <div style="color: #94a3b8; font-size: 10px;">TRADES</div>
+                </div>
+            </div>
+            <div style="color: #64748b; font-size: 10px; margin-top: 10px;">{', '.join(symbol_list[:8])}{'...' if len(symbol_list) > 8 else ''}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    # VRP METRICS (if available)
+    vrp_metrics = report.get('vrp_metrics', [])
+    if vrp_metrics:
+        st.markdown("### 📊 VRP METRICS")
+        vrp_cols = st.columns(min(len(vrp_metrics), 4))
+        for i, vrp in enumerate(vrp_metrics[:4]):
+            with vrp_cols[i]:
+                iv_rv = vrp.get('iv_rv_ratio', 0)
+                threshold = vrp.get('threshold', 1.12)
+                status_color = '#10b981' if iv_rv >= threshold else '#f59e0b'
+                status_text = 'ABOVE' if iv_rv >= threshold else 'BELOW'
+                
+                st.markdown(f"""
+                <div style="background: rgba(15, 23, 42, 0.4); border: 1px solid {status_color}; border-radius: 8px; padding: 15px;">
+                    <div style="color: #fff; font-weight: 700; font-size: 16px;">{vrp.get('symbol', 'N/A')}</div>
+                    <div style="margin-top: 10px;">
+                        <div style="display: flex; justify-content: space-between; color: #94a3b8; font-size: 11px;">
+                            <span>ATM IV</span><span style="color: #fff;">{vrp.get('atm_iv', 0):.1%}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; color: #94a3b8; font-size: 11px;">
+                            <span>RV(20)</span><span style="color: #fff;">{vrp.get('rv_20', 0):.1%}</span>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; color: #94a3b8; font-size: 11px; margin-top: 5px; border-top: 1px solid #333; padding-top: 5px;">
+                            <span>IV/RV</span><span style="color: {status_color}; font-weight: 700;">{iv_rv:.2f}</span>
+                        </div>
+                    </div>
+                    <div style="margin-top: 8px; padding: 4px 8px; background: {status_color}20; border-radius: 4px; text-align: center;">
+                        <span style="color: {status_color}; font-size: 10px; font-weight: 600;">{status_text} THRESHOLD ({threshold})</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
     # REGIME
     st.markdown("### 📊 MARKET REGIME")
     regime = report.get('regime', {})
