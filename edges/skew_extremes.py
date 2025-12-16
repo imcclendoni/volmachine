@@ -70,6 +70,7 @@ class SkewMetrics:
 def calculate_skew_metrics(
     option_chain: OptionChain,
     config: Optional[SkewConfig] = None,
+    as_of_date: Optional[date] = None,
 ) -> Optional[SkewMetrics]:
     """
     Calculate skew metrics from option chain.
@@ -77,6 +78,7 @@ def calculate_skew_metrics(
     Args:
         option_chain: Option chain with IV data
         config: Skew configuration
+        as_of_date: Reference date for DTE calculation (default: today)
         
     Returns:
         SkewMetrics or None if insufficient data
@@ -84,7 +86,7 @@ def calculate_skew_metrics(
     if config is None:
         config = SkewConfig()
     
-    today = date.today()
+    ref_date = as_of_date or date.today()
     spot = option_chain.underlying_price
     
     # Find best expiration
@@ -92,7 +94,7 @@ def calculate_skew_metrics(
     best_dte = None
     
     for exp in option_chain.expirations:
-        dte = (exp - today).days
+        dte = (exp - ref_date).days
         if abs(dte - config.target_dte) <= config.dte_tolerance:
             if best_dte is None or abs(dte - config.target_dte) < abs(best_dte - config.target_dte):
                 best_exp = exp
@@ -301,17 +303,22 @@ def detect_skew_edge(
 
 
 class SkewDetector:
-    """Skew extremes edge detector."""
+    """Skew extremes edge detector with persistent history."""
     
-    def __init__(self, config: Optional[SkewConfig] = None):
+    def __init__(self, config: Optional[SkewConfig] = None, cache_dir: str = './logs/edge_health'):
         self.config = config or SkewConfig()
+        self.cache_dir = cache_dir
         self._history: dict[str, list[float]] = {}
+        
+        # Load persisted history on startup
+        self._load_histories()
     
     def detect(
         self,
         symbol: str,
         option_chain: OptionChain,
         regime: RegimeState,
+        as_of_date: Optional[date] = None,
     ) -> Optional[EdgeSignal]:
         """
         Detect skew edge for a symbol.
@@ -320,12 +327,13 @@ class SkewDetector:
             symbol: Underlying symbol
             option_chain: Current option chain
             regime: Current market regime
+            as_of_date: Reference date for calculations
             
         Returns:
             EdgeSignal if edge detected
         """
         try:
-            metrics = calculate_skew_metrics(option_chain, self.config)
+            metrics = calculate_skew_metrics(option_chain, self.config, as_of_date)
             
             if metrics is None:
                 return None
@@ -333,10 +341,18 @@ class SkewDetector:
             # Get history for percentile calculation
             history = self._history.get(symbol)
             
-            signal = detect_skew_edge(metrics, regime, history, self.config)
+            # Determine if we have enough history
+            has_sufficient_history = history and len(history) >= 10
+            
+            if has_sufficient_history:
+                # Use percentile-based detection
+                signal = detect_skew_edge(metrics, regime, history, self.config)
+            else:
+                # FALLBACK: Use absolute thresholds with low strength
+                signal = self._detect_with_absolute_fallback(metrics, regime)
             
             # Update history
-            self._update_history(symbol, metrics.put_call_skew)
+            self._update_history(symbol, metrics.put_call_skew, as_of_date)
             
             if signal:
                 signal.symbol = symbol
@@ -347,8 +363,67 @@ class SkewDetector:
             print(f"Skew detection error for {symbol}: {e}")
             return None
     
-    def _update_history(self, symbol: str, skew: float):
-        """Update skew history."""
+    def _detect_with_absolute_fallback(
+        self,
+        metrics: SkewMetrics,
+        regime: RegimeState,
+    ) -> Optional[EdgeSignal]:
+        """
+        Fallback detection using absolute thresholds when history is insufficient.
+        Emits with lower strength and history_mode=0 flag.
+        """
+        current_skew = metrics.put_call_skew
+        
+        # Check absolute steep threshold
+        if current_skew >= self.config.skew_extreme_steep:
+            strength = 0.5 if regime != RegimeState.HIGH_VOL_PANIC else 0.3
+            
+            return EdgeSignal(
+                timestamp=datetime.now(),
+                symbol="",
+                edge_type=EdgeType.SKEW_EXTREME,
+                strength=strength,
+                direction=TradeDirection.SHORT,
+                metrics={
+                    'put_iv_25d': round(metrics.put_iv_25d, 4),
+                    'call_iv_25d': round(metrics.call_iv_25d, 4),
+                    'atm_iv': round(metrics.atm_iv, 4),
+                    'put_call_skew': round(current_skew, 4),
+                    'skew_percentile': 0.0,  # Unknown
+                    'is_steep': 1.0,
+                    'history_mode': 0,  # Flag: using absolute fallback
+                },
+                rationale=f"Steep skew (absolute): {current_skew:.1%} >= threshold {self.config.skew_extreme_steep:.1%}. Using fallback (insufficient history).",
+                regime_at_signal=regime,
+            )
+        
+        # Check absolute flat threshold
+        if current_skew <= self.config.skew_extreme_flat:
+            strength = 0.4
+            
+            return EdgeSignal(
+                timestamp=datetime.now(),
+                symbol="",
+                edge_type=EdgeType.SKEW_EXTREME,
+                strength=strength,
+                direction=TradeDirection.LONG,
+                metrics={
+                    'put_iv_25d': round(metrics.put_iv_25d, 4),
+                    'call_iv_25d': round(metrics.call_iv_25d, 4),
+                    'atm_iv': round(metrics.atm_iv, 4),
+                    'put_call_skew': round(current_skew, 4),
+                    'skew_percentile': 0.0,  # Unknown
+                    'is_flat': 1.0,
+                    'history_mode': 0,  # Flag: using absolute fallback
+                },
+                rationale=f"Flat skew (absolute): {current_skew:.1%} <= threshold {self.config.skew_extreme_flat:.1%}. Using fallback (insufficient history).",
+                regime_at_signal=regime,
+            )
+        
+        return None
+    
+    def _update_history(self, symbol: str, skew: float, as_of_date: Optional[date] = None):
+        """Update skew history and persist to disk."""
         if symbol not in self._history:
             self._history[symbol] = []
         
@@ -356,3 +431,37 @@ class SkewDetector:
         
         if len(self._history[symbol]) > 252:
             self._history[symbol] = self._history[symbol][-252:]
+        
+        # Persist after update
+        self._save_histories()
+    
+    def _save_histories(self):
+        """Save skew histories to disk."""
+        import os
+        import json
+        
+        os.makedirs(self.cache_dir, exist_ok=True)
+        cache_file = os.path.join(self.cache_dir, 'skew_histories.json')
+        
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(self._history, f)
+        except Exception as e:
+            print(f"Warning: Could not save skew histories: {e}")
+    
+    def _load_histories(self):
+        """Load skew histories from disk."""
+        import os
+        import json
+        
+        cache_file = os.path.join(self.cache_dir, 'skew_histories.json')
+        
+        if not os.path.exists(cache_file):
+            return
+        
+        try:
+            with open(cache_file, 'r') as f:
+                self._history = json.load(f)
+        except Exception as e:
+            print(f"Warning: Could not load skew histories: {e}")
+
