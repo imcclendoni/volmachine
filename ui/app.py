@@ -236,16 +236,28 @@ def run_engine_processed():
     script_path = Path(__file__).parent.parent / 'scripts' / 'run_daily.py'
     env = os.environ.copy()
     
-    # Priority: 1) st.secrets (Cloud), 2) env var, 3) hardcoded fallback
+    # HARDCODED API KEY - ensures it ALWAYS works
+    # Priority: 1) st.secrets (Cloud), 2) env var, 3) hardcoded
+    FALLBACK_KEY = "lrpYXeKqUp8pBGDlbz1BdJwsmpnpiKzu"
+    
     api_key = None
+    
+    # Try Streamlit Cloud secrets first (direct access, not .get())
     try:
-        api_key = st.secrets.get("POLYGON_API_KEY")
-    except:
+        if hasattr(st, 'secrets') and 'POLYGON_API_KEY' in st.secrets:
+            api_key = st.secrets['POLYGON_API_KEY']
+    except Exception:
         pass
     
+    # Fallback to environment variable
     if not api_key:
-        api_key = os.environ.get('POLYGON_API_KEY', 'lrpYXeKqUp8pBGDlbz1BdJwsmpnpiKzu')
+        api_key = os.environ.get('POLYGON_API_KEY')
     
+    # Final fallback to hardcoded key
+    if not api_key:
+        api_key = FALLBACK_KEY
+    
+    # ALWAYS set the key in the subprocess environment
     env['POLYGON_API_KEY'] = api_key
         
     process = subprocess.Popen(
