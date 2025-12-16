@@ -528,12 +528,14 @@ def render_status_badges(candidate: dict, is_fallback: bool):
 def render_trade_card(candidate: dict):
     """
     Render a compact trade card for grid display.
-    Shows key info in a contained card format.
+    Shows key info in a contained card format with execute button.
     """
     symbol = candidate['symbol']
     structure = candidate.get('structure') or {}
     edge = candidate.get('edge') or {}
     sizing = candidate.get('sizing') or {}
+    candidate_id = candidate.get('id', symbol)
+    is_valid = candidate.get('is_valid', True)
     
     struct_type = structure.get('type', '')
     max_profit = structure.get('max_profit_dollars', 0)
@@ -553,10 +555,10 @@ def render_trade_card(candidate: dict):
     
     # Determine trade direction
     if struct_type in ['debit_spread', 'DEBIT_SPREAD']:
-        direction = "📉 BEARISH"
+        direction = "BEARISH"
         cost = debit
     else:
-        direction = "📈 NEUTRAL"
+        direction = "NEUTRAL"
         cost = credit
     
     exp = structure.get('expiration', '')
@@ -565,29 +567,49 @@ def render_trade_card(candidate: dict):
     edge_type = edge.get('type', '').upper().replace('_', ' ')
     is_fallback = edge.get('is_fallback', False) or edge.get('metrics', {}).get('history_mode', 1) == 0
     
-    # Card container with border
+    # Card state
+    card_key = f"card_{candidate_id}"
+    if 'card_states' not in st.session_state:
+        st.session_state['card_states'] = {}
+    card_state = st.session_state['card_states'].get(card_key, 'ready')
+    
+    # Card container
     with st.container():
-        st.markdown(f"""
-        <div style="border: 2px solid #10b981; border-radius: 12px; padding: 16px; background: linear-gradient(180deg, rgba(16,185,129,0.1), rgba(30,41,59,0.8));">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-                <span style="font-size: 20px; font-weight: bold; color: #f8fafc;">{symbol}</span>
-                <span style="background: {'#ef4444' if is_fallback else '#10b981'}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">{'FALLBACK' if is_fallback else 'CONFIRMED'}</span>
-            </div>
-            <div style="color: #94a3b8; font-size: 12px; margin-bottom: 12px;">{direction} PUT SPREAD</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Header
+        h1, h2 = st.columns([3, 1])
+        with h1:
+            st.markdown(f"### {symbol}")
+            st.caption(f"📉 {direction} • {edge_type}")
+        with h2:
+            if is_fallback:
+                st.error("⚠️ FALLBACK")
+            else:
+                st.success("✓ CONFIRMED")
         
-        # Key metrics
-        col1, col2 = st.columns(2)
-        with col1:
-            st.metric("💵 Cost", f"${cost:.0f}")
-            st.metric("📈 Max Profit", f"${max_profit:.0f}")
-        with col2:
-            st.metric("📉 Max Loss", f"${max_loss:.0f}")
-            st.metric("🎲 Return", f"{return_mult:.1f}x")
+        # Metrics row
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Cost", f"${cost:.0f}")
+        m2.metric("Profit", f"${max_profit:.0f}")
+        m3.metric("Loss", f"${max_loss:.0f}")
+        m4.metric("Return", f"{return_mult:.1f}x")
         
-        # Footer info
-        st.caption(f"⏰ {dte} days | 📊 {contracts} contracts | 🏷️ {edge_type}")
+        # Footer row
+        st.caption(f"⏰ {exp} ({dte}d) • 📊 {contracts} contracts")
+        
+        # Execute button
+        can_execute = is_valid and contracts > 0
+        
+        if card_state == 'ready':
+            if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary"):
+                st.session_state['card_states'][card_key] = 'confirmed'
+                st.rerun()
+        elif card_state == 'confirmed':
+            st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
+            if st.button("↩️ Cancel", key=f"cancel_{candidate_id}"):
+                st.session_state['card_states'][card_key] = 'ready'
+                st.rerun()
+        
+        st.divider()
 
 
 def render_trade_ticket(candidate: dict):
@@ -1220,16 +1242,15 @@ def main():
                     with col:
                         render_trade_card(trade)
         
-        # Detailed view expander for selected trade
-        st.markdown("---")
-        st.markdown("**📋 Detailed Execution View:**")
-        selected_symbol = st.selectbox(
-            "Select trade for full details:",
-            [t['symbol'] for t in trades],
-            key="trade_detail_select"
-        )
-        selected_trade = next((t for t in trades if t['symbol'] == selected_symbol), trades[0])
-        render_trade_ticket(selected_trade)
+        # Optional: Show advanced details in expander
+        with st.expander("📋 Advanced Execution Details", expanded=False):
+            selected_symbol = st.selectbox(
+                "Select trade:",
+                [t['symbol'] for t in trades],
+                key="trade_detail_select"
+            )
+            selected_trade = next((t for t in trades if t['symbol'] == selected_symbol), trades[0])
+            render_trade_ticket(selected_trade)
     else:
         edges = report.get('edges', [])
         if edges:
