@@ -375,6 +375,30 @@ class OptionStructure(BaseModel):
         return None
 
 
+class StructureAttempt(BaseModel):
+    """Diagnostic record of a failed structure build attempt.
+    
+    Used to explain why PASS candidates could not find a valid structure.
+    """
+    # What we tried
+    structure_type: str  # "iron_condor", "credit_spread", "butterfly", etc.
+    width_points: int
+    expiration_dte: Optional[int] = None
+    short_strike: Optional[float] = None
+    long_strike: Optional[float] = None
+    
+    # Failure reason (one of these failure codes)
+    failure_reason: str  # NO_EXPIRY, INVALID_QUOTE, LIQUIDITY_FAIL, CREDIT_NONPOSITIVE, VALIDATION_FAIL, SIZING_REJECT
+    
+    # Key numerics for diagnosis
+    min_oi_found: Optional[int] = None  # Lowest OI on any leg
+    min_volume_found: Optional[int] = None  # Lowest volume on any leg
+    max_bid_ask_pct: Optional[float] = None  # Widest spread %
+    conservative_credit: Optional[float] = None  # Credit at conservative fills
+    max_loss_dollars: Optional[float] = None  # Computed max loss
+    risk_cap_dollars: Optional[float] = None  # Per-trade risk cap
+
+
 class TradeCandidate(BaseModel):
     """Trade candidate with full audit trail.
     
@@ -388,7 +412,7 @@ class TradeCandidate(BaseModel):
     timestamp: datetime
     symbol: str
     
-    # The structure
+    # The structure (may be placeholder for PASS)
     structure: OptionStructure
     
     # Edge that triggered this
@@ -407,6 +431,9 @@ class TradeCandidate(BaseModel):
     # Trade or don't trade
     recommendation: str  # "TRADE", "PASS", "REVIEW"
     rationale: str
+    
+    # PASS diagnostics: why couldn't we build a structure?
+    pass_diagnostics: list[StructureAttempt] = Field(default_factory=list)
     
     # Explainability blocks (desk memo style)
     edge_explanation: Optional[str] = None

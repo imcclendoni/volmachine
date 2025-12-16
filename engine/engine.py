@@ -23,6 +23,7 @@ import yaml
 from data.schemas import (
     OHLCV,
     OptionChain,
+    OptionStructure,
     RegimeClassification,
     EdgeSignal,
     TradeCandidate,
@@ -414,14 +415,16 @@ class VolMachineEngine:
             
             for edge in edges:
                 # Try to find a valid structure (searching widths)
-                structure, validation_messages = self._find_valid_structure(
+                structure, validation_messages, attempt_diagnostics = self._find_valid_structure(
                     edge, regime, option_chain
                 )
                 
                 if structure is None:
-                    # No valid structure found - create PASS candidate
+                    # No valid structure found - create PASS candidate with diagnostics
                     candidate = self._create_pass_candidate(
-                        symbol, edge, regime, "No valid structure found for risk parameters"
+                        symbol, edge, regime, 
+                        "No valid structure found for risk parameters",
+                        diagnostics=attempt_diagnostics
                     )
                     candidates.append(candidate)
                     continue
@@ -480,19 +483,22 @@ class VolMachineEngine:
         edge: EdgeSignal,
         regime: RegimeClassification,
         option_chain: OptionChain,
-    ):
+    ) -> tuple[Optional[OptionStructure], list[str], list]:
         """
         Find a structure that passes validation and sizing.
         
-        Iterates through widths from preferred down to min.
-        
         Returns:
-            Tuple of (structure, messages) or (None, [])
+            Tuple of (structure, validation_messages, attempt_diagnostics)
+            - structure: valid OptionStructure or None
+            - validation_messages: warnings from successful validation
+            - attempt_diagnostics: list of StructureAttempt for PASS diagnostics
         """
+        from data.schemas import StructureAttempt
+        
         spot = option_chain.underlying_price
         atm_strike = round(spot)
         
-        # Calculate max allowable width based on per-trade risk
+        # Calculate max allowable risk based on per-trade risk cap
         max_risk_dollars = self.sizing_config.account_equity * self.sizing_config.max_risk_per_trade_pct / 100
         max_width_for_risk = int(max_risk_dollars / 100)  # 100 = multiplier
         
@@ -506,22 +512,70 @@ class VolMachineEngine:
         if not widths_to_try:
             widths_to_try = [self.builder_config.min_width_points]
         
+        # Collect all attempts for diagnostics
+        attempts: list[StructureAttempt] = []
+        
+        # Log the search parameters
+        self.logger.info('structure_search_started',
+            symbol=option_chain.symbol,
+            spot=round(spot, 2),
+            atm_strike=atm_strike,
+            widths_to_try=widths_to_try,
+            max_risk_dollars=round(max_risk_dollars, 2),
+            edge_type=edge.edge_type.value)
+        
         for width in widths_to_try:
-            structure = self._build_structure_for_edge(
+            structure, struct_type, failure_details = self._build_structure_with_full_diagnostics(
                 edge, regime, option_chain, atm_strike, width
             )
             
             if structure is None:
-                self.logger.debug('structure_build_failed', 
-                    symbol=option_chain.symbol, width=width, reason='build_returned_none')
+                # Record the attempt
+                attempt = StructureAttempt(
+                    structure_type=struct_type,
+                    width_points=width,
+                    expiration_dte=failure_details.get('expiration_dte'),
+                    short_strike=failure_details.get('short_strike'),
+                    long_strike=failure_details.get('long_strike'),
+                    failure_reason=failure_details.get('failure_reason', 'UNKNOWN'),
+                    min_oi_found=failure_details.get('min_oi_found'),
+                    min_volume_found=failure_details.get('min_volume_found'),
+                    max_bid_ask_pct=failure_details.get('max_bid_ask_pct'),
+                    conservative_credit=failure_details.get('conservative_credit'),
+                    max_loss_dollars=failure_details.get('max_loss_dollars'),
+                    risk_cap_dollars=round(max_risk_dollars, 2),
+                )
+                attempts.append(attempt)
+                
+                self.logger.info('structure_build_failed', 
+                    symbol=option_chain.symbol, 
+                    width=width,
+                    struct_type=struct_type,
+                    reason=failure_details.get('failure_reason', 'UNKNOWN'),
+                    details=failure_details)
                 continue
             
             # Quick validation
             validation = validate_structure(structure, self.sizing_config.account_equity)
             if not validation.is_valid:
-                self.logger.debug('structure_validation_failed',
-                    symbol=option_chain.symbol, width=width, 
-                    errors=[str(e) for e in validation.errors[:2]])
+                error_msgs = [str(e) for e in validation.errors[:3]]
+                max_loss_dollars = structure.max_loss * 100 if structure.max_loss else 0
+                
+                attempt = StructureAttempt(
+                    structure_type=structure.structure_type.value,
+                    width_points=width,
+                    expiration_dte=failure_details.get('expiration_dte'),
+                    failure_reason='VALIDATION_FAIL',
+                    max_loss_dollars=round(max_loss_dollars, 2),
+                    risk_cap_dollars=round(max_risk_dollars, 2),
+                )
+                attempts.append(attempt)
+                
+                self.logger.info('structure_validation_failed',
+                    symbol=option_chain.symbol, 
+                    width=width, 
+                    max_loss_dollars=round(max_loss_dollars, 2),
+                    errors=error_msgs)
                 continue
             
             # Quick sizing check
@@ -533,18 +587,219 @@ class VolMachineEngine:
             )
             
             if sizing.allowed:
-                return structure, validation.warnings
+                self.logger.info('structure_found',
+                    symbol=option_chain.symbol,
+                    width=width,
+                    max_loss_dollars=round(structure.max_loss * 100, 2) if structure.max_loss else 0,
+                    contracts=sizing.recommended_contracts)
+                return structure, validation.warnings, []  # Success, no diagnostics needed
             else:
-                self.logger.debug('structure_sizing_failed',
-                    symbol=option_chain.symbol, width=width,
+                max_loss_dollars = structure.max_loss * 100 if structure.max_loss else 0
+                
+                attempt = StructureAttempt(
+                    structure_type=structure.structure_type.value,
+                    width_points=width,
+                    expiration_dte=failure_details.get('expiration_dte'),
+                    failure_reason='SIZING_REJECT',
+                    max_loss_dollars=round(max_loss_dollars, 2),
+                    risk_cap_dollars=round(max_risk_dollars, 2),
+                )
+                attempts.append(attempt)
+                
+                self.logger.info('structure_sizing_failed',
+                    symbol=option_chain.symbol, 
+                    width=width,
+                    max_loss_dollars=round(max_loss_dollars, 2),
+                    risk_cap_dollars=round(max_risk_dollars, 2),
                     reason=sizing.rejection_reason or 'sizing_not_allowed')
         
-        self.logger.debug('no_valid_structure_found',
+        self.logger.info('no_valid_structure_found',
             symbol=option_chain.symbol, 
             widths_tried=widths_to_try,
-            max_risk_dollars=max_risk_dollars)
+            num_attempts=len(attempts),
+            max_risk_cap_dollars=round(max_risk_dollars, 2))
         
-        return None, []
+        return None, [], attempts
+    
+    def _build_structure_with_full_diagnostics(
+        self,
+        edge: EdgeSignal,
+        regime: RegimeClassification,
+        option_chain: OptionChain,
+        atm_strike: float,
+        width_points: int,
+    ) -> tuple[Optional[OptionStructure], str, dict]:
+        """
+        Build a structure with comprehensive failure diagnostics.
+        
+        Returns:
+            Tuple of (structure, struct_type, details_dict)
+            - structure: OptionStructure or None
+            - struct_type: string name of structure type attempted
+            - details_dict: failure diagnostics including expiration_dte, strikes, OI, credit, etc.
+        """
+        from datetime import date
+        from structures.builders import find_best_expiration, find_contract
+        
+        details = {}
+        
+        # First check: valid expiration
+        expiration = find_best_expiration(option_chain, self._run_date, self.builder_config)
+        if expiration is None:
+            dte_range = f"{self.builder_config.min_dte}-{self.builder_config.max_dte}"
+            return None, "unknown", {'failure_reason': f'NO_EXPIRY({dte_range})'}
+        
+        # Compute DTE for diagnostics
+        today = self._run_date if self._run_date else date.today()
+        dte = (expiration - today).days
+        details['expiration_dte'] = dte
+        
+        # Determine structure type based on edge
+        struct_type = "unknown"
+        structure = None
+        
+        if edge.edge_type == EdgeType.VOLATILITY_RISK_PREMIUM:
+            if regime.regime in [RegimeState.LOW_VOL_GRIND, RegimeState.CHOP]:
+                struct_type = "iron_condor"
+                structure = build_iron_condor(
+                    option_chain,
+                    put_short_strike=atm_strike - width_points * 2,
+                    call_short_strike=atm_strike + width_points * 2,
+                    wing_width_points=width_points,
+                    as_of_date=self._run_date,
+                    config=self.builder_config,
+                )
+                details['short_strike'] = atm_strike - width_points * 2  # put short
+            else:
+                struct_type = "put_credit_spread"
+                structure = build_credit_spread(
+                    option_chain,
+                    OptionType.PUT,
+                    atm_strike - width_points,
+                    width_points=width_points,
+                    as_of_date=self._run_date,
+                    config=self.builder_config,
+                )
+                details['short_strike'] = atm_strike - width_points
+                details['long_strike'] = atm_strike - width_points * 2
+        
+        elif edge.edge_type == EdgeType.GAMMA_PRESSURE:
+            struct_type = "butterfly"
+            pin_strike = edge.metrics.get('max_gamma_strike', atm_strike)
+            structure = build_butterfly(
+                option_chain,
+                center_strike=pin_strike,
+                wing_width_points=width_points,
+                as_of_date=self._run_date,
+                config=self.builder_config,
+            )
+            details['short_strike'] = pin_strike
+        
+        elif edge.edge_type == EdgeType.TERM_STRUCTURE:
+            struct_type = "calendar"
+            structure = build_calendar(
+                option_chain,
+                strike=atm_strike,
+                as_of_date=self._run_date,
+                config=self.builder_config,
+            )
+            details['short_strike'] = atm_strike
+        
+        elif edge.edge_type == EdgeType.SKEW_EXTREME:
+            if edge.metrics.get('is_steep', 0) == 1.0:
+                struct_type = "put_credit_spread"
+                structure = build_credit_spread(
+                    option_chain,
+                    OptionType.PUT,
+                    atm_strike - width_points,
+                    width_points=width_points,
+                    as_of_date=self._run_date,
+                    config=self.builder_config,
+                )
+                details['short_strike'] = atm_strike - width_points
+                details['long_strike'] = atm_strike - width_points * 2
+            else:
+                details['failure_reason'] = 'SKEW_NOT_STEEP'
+                return None, "put_credit_spread", details
+        
+        elif edge.edge_type == EdgeType.EVENT_VOL:
+            struct_type = "iron_condor"
+            structure = build_iron_condor(
+                option_chain,
+                put_short_strike=atm_strike - width_points,
+                call_short_strike=atm_strike + width_points,
+                wing_width_points=width_points,
+                as_of_date=self._run_date,
+                config=self.builder_config,
+            )
+            details['short_strike'] = atm_strike - width_points
+        
+        else:
+            details['failure_reason'] = f'UNSUPPORTED_EDGE({edge.edge_type.value})'
+            return None, struct_type, details
+        
+        # If structure built successfully, return it
+        if structure is not None:
+            return structure, struct_type, details
+        
+        # Structure is None - diagnose why
+        short_strike = details.get('short_strike', atm_strike - width_points)
+        long_strike = details.get('long_strike', short_strike - width_points)
+        
+        # Try to find contracts for diagnosis
+        short_c = option_chain.get_contract(expiration, short_strike, OptionType.PUT)
+        long_c = option_chain.get_contract(expiration, long_strike, OptionType.PUT)
+        
+        if short_c is None:
+            details['failure_reason'] = f'SHORT_STRIKE_NOT_FOUND({short_strike})'
+            return None, struct_type, details
+        
+        if long_c is None:
+            details['failure_reason'] = f'LONG_STRIKE_NOT_FOUND({long_strike})'
+            return None, struct_type, details
+        
+        # Collect diagnostic metrics
+        details['min_oi_found'] = min(short_c.open_interest or 0, long_c.open_interest or 0)
+        details['min_volume_found'] = min(short_c.volume or 0, long_c.volume or 0)
+        
+        # Check bid/ask spread
+        if short_c.mid and short_c.mid > 0:
+            short_spread_pct = ((short_c.ask - short_c.bid) / short_c.mid) * 100 if short_c.ask and short_c.bid else 0
+        else:
+            short_spread_pct = 999
+        if long_c.mid and long_c.mid > 0:
+            long_spread_pct = ((long_c.ask - long_c.bid) / long_c.mid) * 100 if long_c.ask and long_c.bid else 0
+        else:
+            long_spread_pct = 999
+        details['max_bid_ask_pct'] = round(max(short_spread_pct, long_spread_pct), 1)
+        
+        # Check quote validity
+        if short_c.bid <= 0:
+            details['failure_reason'] = f'INVALID_QUOTE(short_bid=0)'
+            return None, struct_type, details
+        if long_c.ask <= 0:
+            details['failure_reason'] = f'INVALID_QUOTE(long_ask=0)'
+            return None, struct_type, details
+        
+        # Check credit
+        credit = short_c.bid - long_c.ask
+        details['conservative_credit'] = round(credit, 3)
+        if credit <= 0:
+            details['failure_reason'] = f'CREDIT_NONPOSITIVE({credit:.3f})'
+            return None, struct_type, details
+        
+        # Check liquidity
+        min_oi = self.builder_config.min_open_interest
+        if short_c.open_interest < min_oi:
+            details['failure_reason'] = f'LIQUIDITY_FAIL(short_oi={short_c.open_interest},min={min_oi})'
+            return None, struct_type, details
+        if long_c.open_interest < min_oi:
+            details['failure_reason'] = f'LIQUIDITY_FAIL(long_oi={long_c.open_interest},min={min_oi})'
+            return None, struct_type, details
+        
+        # Unknown failure
+        details['failure_reason'] = f'BUILDER_FAILED({struct_type})'
+        return None, struct_type, details
     
     def _build_structure_for_edge(
         self,
@@ -554,68 +809,11 @@ class VolMachineEngine:
         atm_strike: float,
         width_points: int,
     ):
-        """Build a specific structure type based on edge."""
-        
-        if edge.edge_type == EdgeType.VOLATILITY_RISK_PREMIUM:
-            if regime.regime in [RegimeState.LOW_VOL_GRIND, RegimeState.CHOP]:
-                return build_iron_condor(
-                    option_chain,
-                    put_short_strike=atm_strike - width_points * 2,
-                    call_short_strike=atm_strike + width_points * 2,
-                    wing_width_points=width_points,
-                    as_of_date=self._run_date,
-                    config=self.builder_config,
-                )
-            else:
-                return build_credit_spread(
-                    option_chain,
-                    OptionType.PUT,
-                    atm_strike - width_points,
-                    width_points=width_points,
-                    as_of_date=self._run_date,
-                    config=self.builder_config,
-                )
-        
-        elif edge.edge_type == EdgeType.GAMMA_PRESSURE:
-            pin_strike = edge.metrics.get('max_gamma_strike', atm_strike)
-            return build_butterfly(
-                option_chain,
-                center_strike=pin_strike,
-                wing_width_points=width_points,
-                as_of_date=self._run_date,
-                config=self.builder_config,
-            )
-        
-        elif edge.edge_type == EdgeType.TERM_STRUCTURE:
-            return build_calendar(
-                option_chain,
-                strike=atm_strike,
-                as_of_date=self._run_date,
-                config=self.builder_config,
-            )
-        
-        elif edge.edge_type == EdgeType.SKEW_EXTREME:
-            if edge.metrics.get('skew_type') == 'steep':
-                return build_credit_spread(
-                    option_chain,
-                    OptionType.PUT,
-                    atm_strike - width_points,
-                    width_points=width_points,
-                    as_of_date=self._run_date,
-                    config=self.builder_config,
-                )
-        
-        elif edge.edge_type == EdgeType.EVENT_VOL:
-            return build_iron_condor(
-                option_chain,
-                put_short_strike=atm_strike - width_points,
-                call_short_strike=atm_strike + width_points,
-                wing_width_points=width_points,
-                as_of_date=self._run_date,
-                config=self.builder_config,
-            )
-        
-        return None
+        """Build a specific structure type based on edge (legacy wrapper)."""
+        structure, _, _ = self._build_structure_with_full_diagnostics(
+            edge, regime, option_chain, atm_strike, width_points
+        )
+        return structure
     
     def _create_pass_candidate(
         self,
@@ -623,9 +821,10 @@ class VolMachineEngine:
         edge: EdgeSignal,
         regime: RegimeClassification,
         reason: str,
+        diagnostics: list = None,
     ) -> TradeCandidate:
         """Create a PASS candidate when structure/validation/sizing fails."""
-        from data.schemas import OptionStructure, StructureType
+        from data.schemas import OptionStructure, StructureType, StructureAttempt
         from risk.sizing import SizingResult
         
         # Create minimal placeholder structure with safe defaults (not a real trade)
@@ -651,7 +850,7 @@ class VolMachineEngine:
             rejection_reason=reason,
         )
         
-        return create_trade_candidate(
+        candidate = create_trade_candidate(
             symbol=symbol,
             structure=dummy_structure,
             edge=edge,
@@ -660,6 +859,12 @@ class VolMachineEngine:
             validation_messages=[reason],
             include_explanations=False,  # No explanations for PASS
         )
+        
+        # Add diagnostics if provided
+        if diagnostics:
+            candidate.pass_diagnostics = diagnostics
+        
+        return candidate
     
     def export_report(
         self,

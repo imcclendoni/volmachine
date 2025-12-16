@@ -33,7 +33,7 @@
 <body>
     <div class="report">
         <pre style="white-space: pre-wrap;"># Daily Desk Report - 2025-12-16
-*Generated: 2025-12-16 11:36:24*
+*Generated: 2025-12-16 11:51:52*
 
 **Status: 🟢 TRADING ALLOWED**
 
@@ -46,25 +46,20 @@
 |--------|--------|----------------|
 
 ## Edges Detected
-### 🔥 IWM - gamma_pressure
-- **Strength**: 97%
-- **Direction**: short
-- **Rationale**: Gamma pin zone: Price 249.92 near max gamma strike 250.00 (-0.0%). Potential pinning action. Consider butterfly around pin.
-
 ### 🔥 QQQ - vrp
 - **Strength**: 90%
 - **Direction**: short
-- **Rationale**: VRP edge: IV (24.7%) vs RV (16.9%) = ratio 1.46 (80th percentile). IV is rich relative to realized vol.
+- **Rationale**: VRP edge: IV (25.3%) vs RV (16.9%) = ratio 1.49 (80th percentile). IV is rich relative to realized vol.
+
+### 🔥 IWM - gamma_pressure
+- **Strength**: 87%
+- **Direction**: short
+- **Rationale**: Gamma pin zone: Price 249.58 near max gamma strike 250.00 (-0.2%). Potential pinning action. Consider butterfly around pin.
 
 ### 🔥 SPY - gamma_pressure
-- **Strength**: 81%
+- **Strength**: 73%
 - **Direction**: short
-- **Rationale**: Gamma pin zone: Price 678.40 near max gamma strike 680.00 (-0.2%). Potential pinning action. Consider butterfly around pin.
-
-### ⚡ QQQ - gamma_pressure
-- **Strength**: 68%
-- **Direction**: short
-- **Rationale**: Gamma pin zone: Price 610.59 near max gamma strike 613.00 (-0.4%). Potential pinning action. Consider butterfly around pin.
+- **Rationale**: Gamma pin zone: Price 677.69 near max gamma strike 680.00 (-0.3%). Potential pinning action. Consider butterfly around pin.
 
 ## Trade Candidates
 ### ❌ Candidate 1: SPY
@@ -72,7 +67,7 @@
 
 ```
 [PASS] SPY - credit_spread
-  Edge: gamma_pressure (81%)
+  Edge: gamma_pressure (73%)
   Regime: chop
   Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
   Recommended: 0 contracts
@@ -97,27 +92,12 @@
 
 ---
 
-### ❌ Candidate 3: QQQ
-**Recommendation: PASS**
-
-```
-[PASS] QQQ - credit_spread
-  Edge: gamma_pressure (68%)
-  Regime: chop
-  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
-  Recommended: 0 contracts
-  Total Risk: $0
-  Rationale: Position sizing rejected: No valid structure found for risk parameters
-```
-
----
-
-### ❌ Candidate 4: IWM
+### ❌ Candidate 3: IWM
 **Recommendation: PASS**
 
 ```
 [PASS] IWM - credit_spread
-  Edge: gamma_pressure (97%)
+  Edge: gamma_pressure (87%)
   Regime: chop
   Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
   Recommended: 0 contracts
