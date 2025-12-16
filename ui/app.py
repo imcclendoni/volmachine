@@ -322,6 +322,209 @@ def render_terminal(placeholder, lines):
     """, unsafe_allow_html=True)
 
 
+def render_probability_snapshot(candidate: dict):
+    """
+    Render Probability Snapshot panel.
+    
+    Displays model-based probabilistic estimates:
+    - P(Profit at Expiry)
+    - Expected Value per contract
+    - Reward/Risk Ratio
+    - Breakeven Distance
+    - Credit/Debit-to-Width Ratio
+    """
+    prob_metrics = candidate.get('probability_metrics', {})
+    
+    if not prob_metrics:
+        return  # No probability data available
+    
+    pop = prob_metrics.get('pop_expiry', 0)
+    ev = prob_metrics.get('expected_pnl_expiry', 0)
+    rr_ratio = prob_metrics.get('reward_to_risk_ratio', 0)
+    breakeven_dist = prob_metrics.get('breakeven_distance_pct', 0)
+    credit_to_width = prob_metrics.get('credit_to_width_ratio', 0)
+    
+    st.markdown("""
+    <div style="background: rgba(56,189,248,0.08); border: 1px solid rgba(56,189,248,0.3); border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+        <div style="color: #38bdf8; font-weight: bold; font-size: 12px; margin-bottom: 8px;">
+            📈 PROBABILITY SNAPSHOT (Model-Based)
+        </div>
+    """, unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("P(Profit)", f"{pop:.0%}" if pop else "N/A")
+        if breakeven_dist:
+            st.caption(f"BE Distance: {breakeven_dist:.1%}")
+    
+    with col2:
+        ev_display = f"+${ev:.2f}" if ev >= 0 else f"-${abs(ev):.2f}"
+        st.metric("Expected Value", ev_display if ev else "N/A")
+        st.caption("per contract")
+    
+    with col3:
+        st.metric("Reward/Risk", f"{rr_ratio:.1f}x" if rr_ratio else "N/A")
+        if credit_to_width:
+            st.caption(f"Credit/Width: {credit_to_width:.0%}")
+    
+    st.markdown("""
+        <div style="color: #64748b; font-size: 10px; margin-top: 6px; font-style: italic;">
+            ⚠️ Model-based estimates — not guarantees
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def render_edge_rationale(candidate: dict):
+    """
+    Render Edge Rationale panel (WHY THIS TRADE).
+    
+    Displays in plain English:
+    - What anomaly exists
+    - Why this structure expresses the edge
+    - What would invalidate the thesis
+    """
+    edge = candidate.get('edge', {})
+    structure = candidate.get('structure', {})
+    regime = candidate.get('regime', {})
+    
+    edge_type = edge.get('type', 'unknown')
+    edge_metrics = edge.get('metrics', {})
+    edge_rationale = edge.get('rationale', '')
+    regime_state = regime.get('state', 'unknown') if isinstance(regime, dict) else str(regime)
+    struct_type = structure.get('type', 'spread')
+    max_loss = structure.get('max_loss_dollars', 0)
+    max_profit = structure.get('max_profit_dollars', 0)
+    
+    # Build edge explanation
+    if edge_type == 'skew_extreme':
+        is_flat = edge_metrics.get('is_flat', 0)
+        is_steep = edge_metrics.get('is_steep', 0)
+        skew_pct = edge_metrics.get('put_call_skew', 0) * 100
+        
+        if is_flat:
+            edge_bullet = f"• Put skew unusually flat ({skew_pct:.1f}%) → downside insurance cheap"
+            regime_context = "• In CHOP regime → tails historically underpriced"
+            structure_reason = "• Debit put spread for convex downside exposure"
+            invalidation = "• Volatility compression without downside follow-through"
+        else:
+            edge_bullet = f"• Put skew unusually steep ({skew_pct:.1f}%) → puts expensive"
+            regime_context = "• Market paying premium for downside protection"
+            structure_reason = "• Credit put spread to harvest vol premium"
+            invalidation = "• Sharp selloff that overwhelms collected premium"
+    elif edge_type == 'vrp':
+        iv = edge_metrics.get('atm_iv', 0) * 100
+        rv = edge_metrics.get('rv_20d', 0) * 100
+        ratio = edge_metrics.get('iv_rv_ratio', 0)
+        edge_bullet = f"• IV ({iv:.0f}%) > RV ({rv:.0f}%) → ratio {ratio:.2f}x"
+        regime_context = "• Market pricing in more volatility than realized"
+        structure_reason = "• Credit spread to harvest volatility risk premium"
+        invalidation = "• Realized vol spike above implied levels"
+    else:
+        edge_bullet = f"• {edge_type.replace('_', ' ').title()} edge detected"
+        regime_context = f"• Market regime: {regime_state}"
+        structure_reason = f"• {struct_type.replace('_', ' ').title()} structure"
+        invalidation = "• Edge thesis breaks down"
+    
+    # Risk/reward context
+    if max_loss > 0 and max_profit > 0:
+        payoff_text = f"• ${max_loss:.0f} risk to access ~${max_profit:.0f} payoff"
+    elif max_loss > 0:
+        payoff_text = f"• Max risk capped at ${max_loss:.0f}"
+    else:
+        payoff_text = "• Risk defined by structure"
+    
+    with st.expander("▶ WHY THIS TRADE", expanded=False):
+        st.markdown(f"""
+        **EDGE**  
+        {edge_bullet}  
+        {regime_context}
+        
+        **STRUCTURE**  
+        {structure_reason}  
+        {payoff_text}
+        
+        **WHAT INVALIDATES THIS**  
+        {invalidation}
+        """)
+
+
+def render_sizing_ladder(candidate: dict, candidate_id: str) -> int:
+    """
+    Render what-if sizing ladder with selection.
+    
+    Returns selected contract count.
+    """
+    sizing = candidate.get('sizing', {})
+    what_if_sizes = sizing.get('what_if_sizes', {})
+    default_contracts = sizing.get('recommended_contracts', 0)
+    
+    if not what_if_sizes:
+        return default_contracts
+    
+    # Build options
+    options = []
+    for pct_key, info in what_if_sizes.items():
+        if info.get('allowed', False):
+            contracts = info.get('contracts', 0)
+            risk = info.get('risk_dollars', 0)
+            options.append({
+                'key': pct_key,
+                'label': f"{pct_key}: {contracts} contracts (${risk:.0f} risk)",
+                'contracts': contracts,
+            })
+    
+    if not options:
+        return default_contracts
+    
+    # Default to first allowed option
+    selected_label = st.selectbox(
+        "📊 Risk Tier",
+        [o['label'] for o in options],
+        key=f"sizing_ladder_{candidate_id}",
+        help="Select position size based on risk tier"
+    )
+    
+    # Find selected contracts
+    for opt in options:
+        if opt['label'] == selected_label:
+            return opt['contracts']
+    
+    return default_contracts
+
+
+def render_status_badges(candidate: dict, is_fallback: bool):
+    """
+    Render status badges for the trade.
+    
+    - FALLBACK EDGE (absolute threshold used)
+    - HISTORY CONFIRMED (percentile-based)
+    - PAPER MODE
+    """
+    edge = candidate.get('edge', {})
+    history_mode = edge.get('metrics', {}).get('history_mode', 1)
+    
+    badges = []
+    
+    # Mode badge
+    badges.append(('PAPER', '#f59e0b', 'rgba(245,158,11,0.1)'))
+    
+    # Edge quality badge
+    if is_fallback:
+        badges.append(('FALLBACK EDGE', '#ef4444', 'rgba(239,68,68,0.1)'))
+    else:
+        badges.append(('HISTORY CONFIRMED', '#10b981', 'rgba(16,185,129,0.1)'))
+    
+    badge_html = "".join([
+        f'<span style="border: 1px solid {color}; color: {color}; background: {bg}; '
+        f'padding: 2px 8px; border-radius: 4px; font-size: 10px; margin-right: 4px;">{label}</span>'
+        for label, color, bg in badges
+    ])
+    
+    st.markdown(badge_html, unsafe_allow_html=True)
+
+
 def render_trade_ticket(candidate: dict):
     """
     Render trade ticket with two-step execution flow.
@@ -481,6 +684,12 @@ def render_trade_ticket(candidate: dict):
         st.info(rationale[:100])
         
     st.markdown("</div></div>", unsafe_allow_html=True)
+    
+    # --- PROBABILITY SNAPSHOT (Model-Based) ---
+    render_probability_snapshot(candidate)
+    
+    # --- EDGE RATIONALE (WHY THIS TRADE) ---
+    render_edge_rationale(candidate)
     
     # --- CONFIRMATION FLOW ---
     if 'order_states' not in st.session_state:
