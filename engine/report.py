@@ -88,9 +88,38 @@ def generate_markdown_report(report: DailyReport) -> str:
             lines.append(f"### {emoji} Candidate {i}: {candidate.symbol}")
             lines.append(f"**Recommendation: {rec}**")
             lines.append("")
+            
+            # Quality Score (if available)
+            if candidate.quality_score:
+                qs = candidate.quality_score
+                lines.append(f"**Quality Score: {qs.get('total', 0)}/100 ({qs.get('grade', 'N/A')})**")
+                lines.append("")
+            
+            # Trade summary
             lines.append("```")
             lines.append(format_candidate_summary(candidate))
             lines.append("```")
+            lines.append("")
+            
+            # Edge Explanation (if available)
+            if candidate.edge_explanation:
+                lines.append("<details>")
+                lines.append("<summary>📊 Edge Explanation (click to expand)</summary>")
+                lines.append("")
+                lines.append(candidate.edge_explanation)
+                lines.append("</details>")
+                lines.append("")
+            
+            # Candidate Explanation (if available)
+            if candidate.candidate_explanation:
+                lines.append("<details>")
+                lines.append("<summary>📈 Trade Explanation (click to expand)</summary>")
+                lines.append("")
+                lines.append(candidate.candidate_explanation)
+                lines.append("</details>")
+                lines.append("")
+            
+            lines.append("---")
             lines.append("")
     else:
         lines.append("*No trade candidates for today.*")

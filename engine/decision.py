@@ -36,6 +36,9 @@ def create_trade_candidate(
     regime: RegimeClassification,
     sizing: SizingResult,
     validation_messages: list[str] = None,
+    include_explanations: bool = True,
+    risk_budget: dict = None,
+    liquidity_metrics: dict = None,
 ) -> TradeCandidate:
     """
     Create a trade candidate with full audit trail.
@@ -47,9 +50,12 @@ def create_trade_candidate(
         regime: Market regime at time of signal
         sizing: Position sizing result
         validation_messages: Any validation warnings/errors
+        include_explanations: Whether to generate explanation blocks
+        risk_budget: Risk budget info for explanations
+        liquidity_metrics: Liquidity info for quality score
         
     Returns:
-        TradeCandidate
+        TradeCandidate with explanations and quality score
     """
     if validation_messages is None:
         validation_messages = []
@@ -75,6 +81,53 @@ def create_trade_candidate(
             f"Structure: {structure.structure_type.value}, max loss ${max_loss_dollars:.0f}/contract."
         )
     
+    # Generate explanations and quality score
+    edge_explanation = None
+    candidate_explanation = None
+    quality_score = None
+    
+    if include_explanations:
+        try:
+            from engine.explain import (
+                explain_edge,
+                explain_candidate,
+                calculate_quality_score,
+            )
+            
+            edge_explanation = explain_edge(edge, regime)
+            
+            # Create temporary candidate for explanation
+            temp_candidate = TradeCandidate(
+                id=str(uuid4()),
+                timestamp=datetime.now(),
+                symbol=symbol,
+                structure=structure,
+                edge=edge,
+                regime=regime,
+                recommended_contracts=sizing.recommended_contracts,
+                risk_per_contract=sizing.risk_per_contract_dollars,
+                total_risk=sizing.total_risk_dollars,
+                is_valid=sizing.allowed and len(validation_messages) == 0,
+                validation_messages=validation_messages,
+                recommendation=recommendation,
+                rationale=rationale,
+            )
+            
+            candidate_explanation = explain_candidate(
+                temp_candidate,
+                risk_budget=risk_budget or {},
+            )
+            
+            quality_score = calculate_quality_score(
+                temp_candidate,
+                edge,
+                regime,
+                liquidity_metrics=liquidity_metrics or {},
+            )
+        except Exception:
+            # If explanation generation fails, continue without
+            pass
+    
     return TradeCandidate(
         id=str(uuid4()),
         timestamp=datetime.now(),
@@ -89,6 +142,9 @@ def create_trade_candidate(
         validation_messages=validation_messages,
         recommendation=recommendation,
         rationale=rationale,
+        edge_explanation=edge_explanation,
+        candidate_explanation=candidate_explanation,
+        quality_score=quality_score,
     )
 
 

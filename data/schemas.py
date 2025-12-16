@@ -399,6 +399,13 @@ class TradeCandidate(BaseModel):
     # Trade or don't trade
     recommendation: str  # "TRADE", "PASS", "REVIEW"
     rationale: str
+    
+    # Explainability blocks (desk memo style)
+    edge_explanation: Optional[str] = None
+    candidate_explanation: Optional[str] = None
+    
+    # Quality score (0-100)
+    quality_score: Optional[dict] = None  # {total, edge_strength, regime_fit, liquidity, pricing_quality, grade}
 
 
 # ============================================================================
