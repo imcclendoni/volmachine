@@ -208,7 +208,7 @@ def detect_term_structure_edge(
                 'back_iv': round(metrics.back_iv, 4),
                 'back_dte': metrics.back_dte,
                 'iv_spread_pct': round(metrics.iv_spread_pct, 4),
-                'structure': 'contango',
+                'is_contango': 1.0,  # Numeric flag for contango
             },
             rationale=rationale,
             regime_at_signal=regime,
@@ -248,7 +248,7 @@ def detect_term_structure_edge(
                 'back_iv': round(metrics.back_iv, 4),
                 'back_dte': metrics.back_dte,
                 'iv_spread_pct': round(metrics.iv_spread_pct, 4),
-                'structure': 'backwardation',
+                'is_backwardation': 1.0,  # Numeric flag for backwardation
             },
             rationale=rationale,
             regime_at_signal=regime,

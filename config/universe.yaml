@@ -262,7 +262,7 @@ symbols:
     name: "Microsoft Corp."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     min_volume: 250
@@ -274,7 +274,7 @@ symbols:
     name: "Alphabet Inc."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     min_volume: 200
@@ -286,7 +286,7 @@ symbols:
     name: "Amazon.com Inc."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     min_volume: 200
@@ -298,7 +298,7 @@ symbols:
     name: "Meta Platforms Inc."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     min_volume: 200
@@ -310,7 +310,7 @@ symbols:
     name: "NVIDIA Corp."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     high_vol: true
@@ -324,7 +324,7 @@ symbols:
     name: "Tesla Inc."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     high_vol: true
@@ -338,7 +338,7 @@ symbols:
     name: "Advanced Micro Devices"
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     high_vol: true
@@ -351,7 +351,7 @@ symbols:
     name: "JPMorgan Chase"
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "financials"
     min_volume: 150
@@ -363,7 +363,7 @@ symbols:
     name: "Bank of America"
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "financials"
     min_volume: 150

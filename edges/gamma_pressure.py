@@ -282,7 +282,7 @@ def detect_gamma_edge(
                 'pin_zone_high': round(metrics.pin_zone_high, 2),
                 'price_vs_max_gamma': round(metrics.price_vs_max_gamma, 2),
                 'total_gamma_exposure': round(metrics.total_gamma_exposure, 0),
-                'edge_type': 'pin_zone',
+                'is_pin_zone': 1.0,  # Numeric flag for edge subtype
             },
             rationale=rationale,
             regime_at_signal=regime,
@@ -313,9 +313,9 @@ def detect_gamma_edge(
             direction=TradeDirection.LONG,  # Long vol / expect larger moves
             metrics={
                 'net_gamma': round(metrics.net_gamma, 0),
-                'gamma_flip_level': metrics.gamma_flip_level,
+                'gamma_flip_level': metrics.gamma_flip_level or 0.0,
                 'current_price': metrics.current_price,
-                'edge_type': 'negative_gamma',
+                'is_negative_gamma': 1.0,  # Numeric flag for edge subtype
             },
             rationale=rationale,
             regime_at_signal=regime,

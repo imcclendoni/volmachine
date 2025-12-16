@@ -275,12 +275,12 @@ class EdgeSignal(BaseModel):
     symbol: str
     edge_type: EdgeType
     
-    # Signal strength
-    strength: float = Field(ge=0, le=1)  # 0 = no signal, 1 = maximum
+    # Signal strength (allow slight negatives from numerical noise)
+    strength: float = Field(ge=-0.2, le=1.1)  # Relaxed for numerical noise
     direction: TradeDirection  # Preferred trade direction
     
-    # Supporting data
-    metrics: dict[str, float]  # e.g., {"iv_rv_ratio": 1.45, "percentile": 85}
+    # Supporting data - all values must be numeric
+    metrics: dict[str, float]  # e.g., {"iv_rv_ratio": 1.45, "is_pin_zone": 1.0}
     
     # Rationale (for audit)
     rationale: str

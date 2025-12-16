@@ -512,11 +512,16 @@ class VolMachineEngine:
             )
             
             if structure is None:
+                self.logger.debug('structure_build_failed', 
+                    symbol=option_chain.symbol, width=width, reason='build_returned_none')
                 continue
             
             # Quick validation
             validation = validate_structure(structure, self.sizing_config.account_equity)
             if not validation.is_valid:
+                self.logger.debug('structure_validation_failed',
+                    symbol=option_chain.symbol, width=width, 
+                    errors=[str(e) for e in validation.errors[:2]])
                 continue
             
             # Quick sizing check
@@ -529,6 +534,15 @@ class VolMachineEngine:
             
             if sizing.allowed:
                 return structure, validation.warnings
+            else:
+                self.logger.debug('structure_sizing_failed',
+                    symbol=option_chain.symbol, width=width,
+                    reason=sizing.rejection_reason or 'sizing_not_allowed')
+        
+        self.logger.debug('no_valid_structure_found',
+            symbol=option_chain.symbol, 
+            widths_tried=widths_to_try,
+            max_risk_dollars=max_risk_dollars)
         
         return None, []
     
@@ -614,13 +628,17 @@ class VolMachineEngine:
         from data.schemas import OptionStructure, StructureType
         from risk.sizing import SizingResult
         
-        # Create minimal placeholder structure (not a real trade)
+        # Create minimal placeholder structure with safe defaults (not a real trade)
         # is_placeholder=True bypasses validation requirements
+        # Use 0.0 instead of None to avoid formatting crashes
         dummy_structure = OptionStructure(
             structure_type=StructureType.CREDIT_SPREAD,
             symbol=symbol,
             legs=[],
-            max_loss=None,  # None is valid for placeholders
+            entry_credit=0.0,
+            entry_debit=0.0,
+            max_loss=0.0,
+            max_profit=0.0,
             is_placeholder=True,
         )
         

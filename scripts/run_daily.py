@@ -104,7 +104,8 @@ def main():
             emoji = "✅" if c.recommendation == "TRADE" else "⚠️" if c.recommendation == "REVIEW" else "❌"
             print(f"{i}. {emoji} {c.symbol} - {c.structure.structure_type.value}")
             print(f"   Edge: {c.edge.edge_type.value} ({c.edge.strength:.0%})")
-            print(f"   Max Loss: ${c.structure.max_loss:.2f}, Contracts: {c.recommended_contracts}")
+            max_loss_str = f"${c.structure.max_loss:.2f}" if c.structure.max_loss else "N/A"
+            print(f"   Max Loss: {max_loss_str}, Contracts: {c.recommended_contracts}")
     
     # Save report
     if not args.dry_run:

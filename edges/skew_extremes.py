@@ -241,7 +241,7 @@ def detect_skew_edge(
                 'atm_iv': round(metrics.atm_iv, 4),
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
-                'skew_type': 'steep',
+                'is_steep': 1.0,  # Numeric flag for steep skew
             },
             rationale=rationale,
             regime_at_signal=regime,
@@ -273,7 +273,7 @@ def detect_skew_edge(
                 'atm_iv': round(metrics.atm_iv, 4),
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
-                'skew_type': 'flat',
+                'is_flat': 1.0,  # Numeric flag for flat skew
             },
             rationale=rationale,
             regime_at_signal=regime,
