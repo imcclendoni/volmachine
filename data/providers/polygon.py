@@ -449,11 +449,14 @@ class PolygonProvider(DataProvider):
                 
                 # FALLBACK: If no bid/ask, synthesize from mid price with assumed spread
                 # This allows edge detection to work with end-of-day data
+                # CRITICAL: Mark as synthesized so candidates become REVIEW only, not TRADE
+                quotes_synthesized = False
                 if bid == 0 and ask == 0 and mid_price > 0:
                     # Assume 5% total spread (2.5% each side) - conservative for options
                     half_spread_pct = 0.025
                     bid = mid_price * (1 - half_spread_pct)
                     ask = mid_price * (1 + half_spread_pct)
+                    quotes_synthesized = True
                     # Log that we synthesized quotes
                     logger.debug(f"Synthesized quotes for {contract_symbol}: mid={mid_price:.2f} -> bid={bid:.2f}/ask={ask:.2f}")
                 
@@ -474,6 +477,7 @@ class PolygonProvider(DataProvider):
                     volume=volume,
                     open_interest=details.get('open_interest', 0) or 0,
                     quote_time=quote_timestamp,
+                    quotes_synthesized=quotes_synthesized,
                 )
                 contracts.append(contract)
                 

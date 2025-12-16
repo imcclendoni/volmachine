@@ -109,9 +109,9 @@ def _serialize_edge(edge: EdgeSignal) -> dict:
     """Serialize edge signal to dict."""
     return {
         'symbol': edge.symbol,
-        'type': edge.edge_type,
+        'type': edge.edge_type.value if hasattr(edge.edge_type, 'value') else str(edge.edge_type),
         'strength': edge.strength,
-        'direction': edge.direction,
+        'direction': edge.direction.value if hasattr(edge.direction, 'value') else str(edge.direction),
         'metrics': edge.metrics,
         'rationale': edge.rationale or '',
     }

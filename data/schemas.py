@@ -124,6 +124,10 @@ class OptionContract(BaseModel):
     # Timestamps
     quote_time: Optional[datetime] = None
     
+    # Quote source flag: True if bid/ask were synthesized from mid price (not real quotes)
+    # CRITICAL: If True, candidates should be REVIEW only, not TRADE (for execution safety)
+    quotes_synthesized: bool = False
+    
     @property
     def bid_ask_spread(self) -> float:
         """Bid-ask spread in absolute terms."""

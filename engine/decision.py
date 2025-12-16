@@ -129,34 +129,30 @@ def create_trade_candidate(
             pass
     
     # Calculate probability metrics
+    # ONLY compute if: 1) recommendation is TRADE, 2) structure has legs, 3) spot_price provided
     probability_metrics = None
-    try:
-        from engine.probability import calculate_probability_metrics
-        from structures.pricing import get_risk_free_rate, get_dividend_yield, time_to_expiry_years
-        
-        # Get expiration from first leg
-        if structure.legs:
-            expiration = structure.legs[0].contract.expiration
-            spot = structure.legs[0].contract.symbol  # Will need to pass spot price
+    if recommendation == "TRADE" and structure.legs and not getattr(structure, 'is_placeholder', False):
+        try:
+            from engine.probability import calculate_probability_metrics
+            from structures.pricing import get_risk_free_rate, get_dividend_yield, time_to_expiry_years
             
-            # Get IV from structure or first leg
-            iv = structure.legs[0].contract.iv or 0.20  # Default 20%
-            
-            # Use chain timestamp if available (from context), else today
-            as_of = risk_budget.get("as_of_date") if risk_budget else None
-            
-            # Get market params
-            config = risk_budget.get("config") if risk_budget else None
-            r = get_risk_free_rate(config)
-            q = get_dividend_yield(symbol, config)
-            
-            # Get spot price from risk_budget or estimate from structure
+            # Get spot_price from risk_budget - REQUIRED, no fallback to strike
             spot_price = risk_budget.get("spot_price") if risk_budget else None
-            if not spot_price and structure.legs:
-                # Estimate from first leg strike (ATM assumption)
-                spot_price = structure.legs[0].contract.strike
             
             if spot_price:
+                expiration = structure.legs[0].contract.expiration
+                
+                # Get IV from first leg or default
+                iv = structure.legs[0].contract.iv or 0.20  # Default 20%
+                
+                # Use as_of_date from risk_budget if available
+                as_of = risk_budget.get("as_of_date") if risk_budget else None
+                
+                # Get market params
+                config = risk_budget.get("config") if risk_budget else None
+                r = get_risk_free_rate(config)
+                q = get_dividend_yield(symbol, config)
+                
                 t = time_to_expiry_years(expiration, as_of)
                 
                 metrics = calculate_probability_metrics(
@@ -182,9 +178,9 @@ def create_trade_candidate(
                     "assumptions": metrics.assumptions,
                     "warning": metrics.warning,
                 }
-    except Exception:
-        # If probability calculation fails, continue without
-        pass
+        except Exception:
+            # If probability calculation fails, continue without
+            pass
     
     return TradeCandidate(
         id=str(uuid4()),
