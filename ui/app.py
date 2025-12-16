@@ -37,238 +37,186 @@ st.markdown("""
 
 /* GLOBAL THEME */
 .stApp {
-    background: #050505;
+    background: #0a0e17; /* Brighter deep blue-black */
     background-image: 
-        radial-gradient(circle at 50% 0%, rgba(0, 217, 255, 0.15) 0%, transparent 60%),
-        radial-gradient(circle at 100% 0%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
-        linear-gradient(0deg, rgba(0,0,0,0.2) 0%, transparent 100%);
-    color: #e6e8eb;
+        radial-gradient(circle at 50% 0%, rgba(0, 242, 234, 0.15) 0%, transparent 60%),
+        linear-gradient(rgba(0, 217, 255, 0.1) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 217, 255, 0.1) 1px, transparent 1px);
+    background-size: 100% 100%, 40px 40px, 40px 40px;
+    color: #f1f5f9;
 }
 
 /* TYPOGRAPHY */
 h1, h2, h3, .main-title {
     font-family: 'Rajdhani', sans-serif !important;
     text-transform: uppercase;
-    letter-spacing: 0.05em;
+    letter-spacing: 0.1em;
 }
 
 /* MAIN TITLE */
 .main-title {
-    font-size: 3.5rem;
-    font-weight: 700;
-    background: linear-gradient(90deg, #00f2ea 0%, #00d9ff 50%, #0066ff 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 40px rgba(0, 217, 255, 0.3);
+    font-size: 4.5rem;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 0 20px rgba(0, 217, 255, 0.8), 0 0 40px rgba(0, 217, 255, 0.4);
+    background: none;
+    -webkit-text-fill-color: initial;
     margin: 0;
-    padding-bottom: 10px;
+    padding-bottom: 20px;
 }
 
 /* SUBHEADERS */
 h3 {
-    font-size: 1.5rem !important;
-    color: #94a3b8;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-    padding-bottom: 10px;
-    margin-top: 30px !important;
-    display: flex;
-    align-items: center;
-    gap: 10px;
+    font-size: 1.8rem !important;
+    color: #e2e8f0;
+    border-bottom: 2px solid #00d9ff;
+    padding-bottom: 12px;
+    margin-top: 40px !important;
+    text-shadow: 0 0 10px rgba(0, 217, 255, 0.3);
 }
 
-/* RISK STATUS - ALLOWED */
+/* CARDS COMMON */
+.card-base {
+    background: rgba(15, 23, 42, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    backdrop-filter: blur(12px);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* RISK STATUS */
 .risk-allowed {
-    background: linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(6, 78, 59, 0.1) 100%);
-    border: 1px solid #10b981;
-    box-shadow: 0 0 30px rgba(16, 185, 129, 0.15), inset 0 0 20px rgba(16, 185, 129, 0.05);
-    border-radius: 12px;
-    padding: 24px;
+    background: rgba(6, 78, 59, 0.3);
+    border: 2px solid #10b981;
+    box-shadow: 0 0 40px rgba(16, 185, 129, 0.2);
+    border-radius: 8px;
+    padding: 30px;
     text-align: center;
-    position: relative;
-    backdrop-filter: blur(10px);
 }
 
-.risk-allowed::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, #10b981, transparent);
-    opacity: 0.5;
-}
-
-/* RISK STATUS - BLOCKED */
 .risk-blocked {
-    background: linear-gradient(135deg, rgba(127, 29, 29, 0.4) 0%, rgba(127, 29, 29, 0.1) 100%);
-    border: 1px solid #ef4444;
-    box-shadow: 0 0 30px rgba(239, 68, 68, 0.15), inset 0 0 20px rgba(239, 68, 68, 0.05);
-    border-radius: 12px;
-    padding: 24px;
+    background: rgba(127, 29, 29, 0.3);
+    border: 2px solid #ef4444;
+    box-shadow: 0 0 40px rgba(239, 68, 68, 0.2);
+    border-radius: 8px;
+    padding: 30px;
     text-align: center;
-    backdrop-filter: blur(10px);
 }
 
 /* SIGNAL STATUS */
 .signal-box {
-    background: rgba(15, 23, 42, 0.4);
-    border: 1px solid rgba(56, 189, 248, 0.2);
-    border-radius: 12px;
-    padding: 24px;
+    background: rgba(15, 23, 42, 0.5);
+    border: 2px solid #38bdf8;
+    box-shadow: 0 0 30px rgba(56, 189, 248, 0.1);
+    border-radius: 8px;
+    padding: 30px;
     text-align: center;
     display: flex;
     flex-direction: column;
-    align-items: center;
     justify-content: center;
     height: 100%;
-    backdrop-filter: blur(5px);
 }
 
 .signal-pill {
-    padding: 10px 30px;
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 700;
-    letter-spacing: 0.1em;
-    font-size: 1.4rem;
-    text-transform: uppercase;
+    font-size: 1.8rem;
+    padding: 12px 36px;
+    border-radius: 6px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+    border: 2px solid rgba(255,255,255,0.2);
 }
 
-.sig-trade { 
-    background: #10b981; color: #000; 
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
-    border: 1px solid #34d399;
-}
-.sig-pass { 
-    background: rgba(239, 68, 68, 0.9); color: #fff;
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
-    border: 1px solid #f87171;
-}
-.sig-none { 
-    background: rgba(30, 41, 59, 0.8); color: #94a3b8;
-    border: 1px solid #475569;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
-}
+.sig-trade { background: #059669; color: white; box-shadow: 0 0 30px #10b981; border-color: #34d399; }
+.sig-pass { background: #dc2626; color: white; box-shadow: 0 0 30px #ef4444; border-color: #f87171; }
+.sig-none { background: #475569; color: #cbd5e1; box-shadow: 0 0 15px rgba(255,255,255,0.1); }
 
 /* TERMINAL */
 .terminal-window {
-    background: rgba(10, 10, 10, 0.95);
-    border: 1px solid #333;
-    border-radius: 8px;
+    background: #09090b;
+    border: 1px solid #3f3f46;
+    border-radius: 6px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    padding: 0;
-    overflow: hidden;
-    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
-    margin-bottom: 20px;
+    font-size: 13px;
+    line-height: 1.5;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.8);
+    margin-bottom: 30px;
 }
 
 .terminal-header {
-    background: #171717;
-    padding: 10px 14px;
-    border-bottom: 1px solid #333;
-    display: flex;
-    gap: 8px;
-    align-items: center;
+    background: #18181b;
+    padding: 8px 16px;
+    border-bottom: 1px solid #3f3f46;
+    color: #a1a1aa;
+    font-size: 12px;
 }
 
-/* TRADE CARD */
+.terminal-content {
+    padding: 20px;
+    color: #22d3ee;
+    height: 350px;
+    overflow-y: auto;
+}
+
+/* TRADE TICKET */
 .trade-card {
-    background: rgba(16, 20, 26, 0.6);
-    border: 1px solid rgba(0, 217, 255, 0.2);
-    border-top: 4px solid #00f2ea;
-    border-radius: 12px;
-    padding: 0;
+    background: rgba(16, 20, 26, 0.8);
+    border: 2px solid #06b6d4;
+    border-radius: 8px;
     margin: 20px 0;
-    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
-    position: relative;
-    overflow: hidden;
-    backdrop-filter: blur(10px);
+    box-shadow: 0 0 50px rgba(6, 182, 212, 0.15);
 }
 
 .trade-header {
-    background: linear-gradient(90deg, rgba(0, 242, 234, 0.15) 0%, transparent 100%);
-    padding: 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.08);
+    background: #083344;
+    padding: 20px 25px;
+    border-bottom: 1px solid #06b6d4;
 }
 
 .ticket-code {
-    background: #0d1117;
-    border: 1px solid #30363d;
-    border-radius: 6px;
-    padding: 20px;
-    font-family: 'JetBrains Mono', monospace;
+    background: #020617;
+    border: 1px solid #1e293b;
+    color: #e2e8f0;
+    padding: 25px;
     font-size: 14px;
-    color: #e6edf3;
-    position: relative;
-    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+    line-height: 1.6;
 }
 
 /* REGIME */
 .regime-panel {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(30, 41, 59, 0.3);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 12px;
-    padding: 30px;
-    backdrop-filter: blur(5px);
+    background: rgba(30, 41, 59, 0.4);
+    border: 1px solid rgba(255,255,255,0.1);
+    padding: 35px;
+    border-radius: 8px;
 }
 
 .regime-big-text {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 4.5rem;
-    font-weight: 800;
-    line-height: 1;
-    text-transform: uppercase;
-    text-shadow: 0 0 40px currentColor;
-    margin: 10px 0;
-}
-
-/* BUTTONS */
-.stButton > button {
-    background: linear-gradient(90deg, #0066ff 0%, #00d9ff 100%);
-    border: none;
-    color: white;
-    font-family: 'Rajdhani', sans-serif;
-    font-weight: 700;
-    font-size: 18px;
-    text-transform: uppercase;
-    letter-spacing: 2px;
-    padding: 14px 30px;
-    border-radius: 6px;
-    transition: all 0.3s ease;
-    width: 100%;
-    box-shadow: 0 0 25px rgba(0, 102, 255, 0.4);
-}
-
-.stButton > button:hover {
-    box-shadow: 0 0 40px rgba(0, 217, 255, 0.7);
-    transform: translateY(-2px);
-    filter: brightness(1.1);
+    font-size: 5rem;
+    font-weight: 900;
+    text-shadow: 0 0 50px currentColor;
+    margin: 15px 0;
 }
 
 /* METRICS */
 [data-testid="stMetric"] {
-    background: rgba(30, 41, 59, 0.2);
-    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
     padding: 20px;
-    border-radius: 12px;
-    backdrop-filter: blur(5px);
 }
+[data-testid="stMetricLabel"] { font-size: 13px; color: #94a3b8; font-weight: 600; }
+[data-testid="stMetricValue"] { font-size: 2.5rem; color: white; font-weight: 700; text-shadow: 0 0 20px rgba(255,255,255,0.2); }
 
-[data-testid="stMetricLabel"] {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px;
-    color: #94a3b8;
-    text-transform: uppercase;
-    letter-spacing: 1px;
+.stButton > button {
+    background: #0066ff;
+    border: 2px solid #3b82f6;
+    font-size: 20px;
+    padding: 16px 32px;
+    letter-spacing: 3px;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    height: auto;
 }
-
-[data-testid="stMetricValue"] {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: #f1f5f9;
+.stButton > button:hover {
+    background: #2563eb;
+    box-shadow: 0 0 50px rgba(37, 99, 235, 0.6);
 }
 </style>
 """, unsafe_allow_html=True)
@@ -287,6 +235,11 @@ def run_engine_processed():
     """Run engine and stream output."""
     script_path = Path(__file__).parent.parent / 'scripts' / 'run_daily.py'
     env = os.environ.copy()
+    
+    # Inject API key if missing (using the known key)
+    if 'POLYGON_API_KEY' not in env:
+        env['POLYGON_API_KEY'] = "lrpYXeKqUp8pBGDlbz1BdJwsmpnpiKzu"
+        
     process = subprocess.Popen(
         [sys.executable, str(script_path)],
         stdout=subprocess.PIPE,
