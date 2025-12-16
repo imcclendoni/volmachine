@@ -326,11 +326,54 @@ class PolygonProvider(DataProvider):
                        f"range: {min_exp} ({min_dte_found}d) to {max_exp} ({max_dte_found}d), "
                        f"{in_range} in target DTE window")
         
-        # Get snapshots for quotes and Greeks
+        # =====================================================================
+        # PERFORMANCE OPTIMIZATION: Filter contracts before snapshotting
+        # Only snapshot what we might realistically trade
+        # =====================================================================
+        
+        # 1. Select best 2 expirations around target DTE (e.g., 30-45 days)
+        target_dte = 30  # Ideal DTE for most strategies
+        sorted_exps_with_dte = [(exp, abs((exp - today).days - target_dte)) for exp in sorted_expirations]
+        sorted_exps_with_dte.sort(key=lambda x: x[1])  # Sort by distance from target
+        selected_expirations = set([exp for exp, _ in sorted_exps_with_dte[:2]])  # Nearest 2
+        
+        if selected_expirations:
+            logger.info(f"Polygon {symbol}: selected {len(selected_expirations)} expirations near {target_dte}d target")
+        
+        # 2. Filter strikes to ±20% of underlying price
+        strike_min = underlying_price * 0.80
+        strike_max = underlying_price * 1.20
+        
+        # 3. Apply filters to contract list
+        filtered_contracts = []
+        for meta in all_contracts_meta:
+            exp_str = meta.get('expiration_date')
+            strike = meta.get('strike_price', 0)
+            
+            if not exp_str:
+                continue
+                
+            exp_date = date.fromisoformat(exp_str)
+            
+            # Check expiration filter
+            if exp_date not in selected_expirations:
+                continue
+            
+            # Check strike window
+            if not (strike_min <= strike <= strike_max):
+                continue
+            
+            filtered_contracts.append(meta)
+        
+        logger.info(f"Polygon {symbol}: filtered {len(all_contracts_meta)} -> {len(filtered_contracts)} contracts "
+                   f"(strikes {strike_min:.0f}-{strike_max:.0f}, {len(selected_expirations)} expirations)")
+        
+        # Get snapshots for filtered contracts only
         contracts = []
         chain_timestamp = datetime.now()
+        snapshot_errors = 0
         
-        for meta in all_contracts_meta:
+        for meta in filtered_contracts:
             contract_symbol = meta.get('ticker')
             exp_date = date.fromisoformat(meta.get('expiration_date'))
             
@@ -343,17 +386,27 @@ class PolygonProvider(DataProvider):
                 day = details.get('day', {})
                 greeks_data = details.get('greeks', {})
                 
-                # Build Greeks if available - clamp values for numerical noise
+                # Build Greeks with EPSILON-based clamping for numerical noise only
+                # This applies at contract level only - aggregated structure Greeks can be negative
+                EPSILON = 1e-6
                 greeks = None
                 if greeks_data:
-                    # Clamp to handle slight numerical noise from Polygon
                     delta = greeks_data.get('delta', 0)
-                    gamma = max(greeks_data.get('gamma', 0), 0)  # Must be >= 0
+                    gamma = greeks_data.get('gamma', 0)
                     theta = greeks_data.get('theta', 0)  # Can be negative
-                    vega = max(greeks_data.get('vega', 0), 0)  # Must be >= 0
+                    vega = greeks_data.get('vega', 0)
                     
-                    # Clamp delta to [-1, 1]
-                    delta = max(-1, min(1, delta))
+                    # Epsilon tolerance: only clamp if negative by tiny amount (noise)
+                    if gamma < 0 and abs(gamma) < EPSILON:
+                        gamma = 0
+                    if vega < 0 and abs(vega) < EPSILON:
+                        vega = 0
+                    
+                    # Clamp delta to [-1, 1] with epsilon tolerance
+                    if delta < -1 and abs(delta + 1) < EPSILON:
+                        delta = -1
+                    elif delta > 1 and abs(delta - 1) < EPSILON:
+                        delta = 1
                     
                     greeks = Greeks(
                         delta=delta,
@@ -390,9 +443,14 @@ class PolygonProvider(DataProvider):
                 )
                 contracts.append(contract)
                 
-            except DataProviderError:
-                # Skip contracts without snapshots
+            except DataProviderError as e:
+                snapshot_errors += 1
+                if snapshot_errors <= 3:
+                    logger.debug(f"Snapshot error for {contract_symbol}: {e}")
                 continue
+        
+        if snapshot_errors > 0:
+            logger.warning(f"Polygon {symbol}: {snapshot_errors} snapshot errors (may be rate limited)")
         
         logger.info(f"Polygon {symbol}: got snapshots for {len(contracts)} contracts")
         
