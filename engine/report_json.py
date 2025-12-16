@@ -205,8 +205,10 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
                 'expiration_dte': d.expiration_dte,
                 'failure_reason': d.failure_reason,
                 'min_oi_found': d.min_oi_found,
+                'min_volume_found': d.min_volume_found,
                 'max_bid_ask_pct': d.max_bid_ask_pct,
                 'conservative_credit': d.conservative_credit,
+                'conservative_debit': d.conservative_debit,
                 'max_loss_dollars': d.max_loss_dollars,
                 'risk_cap_dollars': d.risk_cap_dollars,
             }

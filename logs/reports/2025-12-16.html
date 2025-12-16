@@ -33,7 +33,7 @@
 <body>
     <div class="report">
         <pre style="white-space: pre-wrap;"># Daily Desk Report - 2025-12-16
-*Generated: 2025-12-16 14:31:59*
+*Generated: 2025-12-16 16:21:41*
 
 **Status: 🟢 TRADING ALLOWED**
 
@@ -46,10 +46,106 @@
 |--------|--------|----------------|
 
 ## Edges Detected
-*No significant edges detected today.*
+### 💡 IWM - skew_extreme
+- **Strength**: 40%
+- **Direction**: long
+- **Rationale**: Flat skew (absolute): 1.4% <= threshold 2.0%. Using fallback (insufficient history).
+
+### 💡 TLT - skew_extreme
+- **Strength**: 40%
+- **Direction**: long
+- **Rationale**: Flat skew (absolute): 0.4% <= threshold 2.0%. Using fallback (insufficient history).
+
+### 💡 AAPL - skew_extreme
+- **Strength**: 40%
+- **Direction**: long
+- **Rationale**: Flat skew (absolute): 0.3% <= threshold 2.0%. Using fallback (insufficient history).
+
+### 💡 MSFT - skew_extreme
+- **Strength**: 40%
+- **Direction**: long
+- **Rationale**: Flat skew (absolute): 0.1% <= threshold 2.0%. Using fallback (insufficient history).
+
+### 💡 AAPL - vrp
+- **Strength**: 20%
+- **Direction**: short
+- **Rationale**: VRP edge: IV (19.1%) vs RV (14.7%) = ratio 1.30 (50th percentile). IV is rich relative to realized vol.
 
 ## Trade Candidates
-*No trade candidates for today.*
+### ❌ Candidate 1: IWM
+**Recommendation: PASS**
+
+```
+[PASS] IWM - credit_spread
+  Edge: skew_extreme (40%)
+  Regime: chop
+  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
+  Recommended: 0 contracts
+  Total Risk: $0
+  Rationale: Position sizing rejected: No valid structure found for risk parameters
+```
+
+---
+
+### ❌ Candidate 2: TLT
+**Recommendation: PASS**
+
+```
+[PASS] TLT - credit_spread
+  Edge: skew_extreme (40%)
+  Regime: chop
+  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
+  Recommended: 0 contracts
+  Total Risk: $0
+  Rationale: Position sizing rejected: No valid structure found for risk parameters
+```
+
+---
+
+### ❌ Candidate 3: AAPL
+**Recommendation: PASS**
+
+```
+[PASS] AAPL - credit_spread
+  Edge: vrp (20%)
+  Regime: chop
+  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
+  Recommended: 0 contracts
+  Total Risk: $0
+  Rationale: Position sizing rejected: No valid structure found for risk parameters
+```
+
+---
+
+### ❌ Candidate 4: AAPL
+**Recommendation: PASS**
+
+```
+[PASS] AAPL - credit_spread
+  Edge: skew_extreme (40%)
+  Regime: chop
+  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
+  Recommended: 0 contracts
+  Total Risk: $0
+  Rationale: Position sizing rejected: No valid structure found for risk parameters
+```
+
+---
+
+### ❌ Candidate 5: MSFT
+**Recommendation: PASS**
+
+```
+[PASS] MSFT - credit_spread
+  Edge: skew_extreme (40%)
+  Regime: chop
+  Greeks: Δ=0.00 Γ=0.0000 Θ=0.00 V=0.00
+  Recommended: 0 contracts
+  Total Risk: $0
+  Rationale: Position sizing rejected: No valid structure found for risk parameters
+```
+
+---
 
 ## Portfolio State
 - **Open Positions**: 0

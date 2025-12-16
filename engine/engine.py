@@ -908,12 +908,29 @@ class VolMachineEngine:
             details['failure_reason'] = f'INVALID_QUOTE(long_ask=0)'
             return None, struct_type, details
         
-        # Check credit
-        credit = short_c.bid - long_c.ask
-        details['conservative_credit'] = round(credit, 3)
-        if credit <= 0:
-            details['failure_reason'] = f'CREDIT_NONPOSITIVE({credit:.3f})'
-            return None, struct_type, details
+        # Check credit/debit based on structure type
+        is_debit_spread = 'debit' in struct_type.lower()
+        
+        if is_debit_spread:
+            # For debit spreads: we BUY long_strike (closer to ATM), SELL short_strike (further OTM)
+            # Debit = long.ask - short.bid (what we pay)
+            conservative_debit = long_c.ask - short_c.bid
+            details['conservative_debit'] = round(conservative_debit, 3)
+            
+            # Debit must be positive (we're paying for it)
+            if conservative_debit <= 0:
+                details['failure_reason'] = f'DEBIT_NONPOSITIVE({conservative_debit:.3f})'
+                return None, struct_type, details
+        else:
+            # For credit spreads: we SELL short_strike, BUY long_strike
+            # Credit = short.bid - long.ask (what we receive)
+            conservative_credit = short_c.bid - long_c.ask
+            details['conservative_credit'] = round(conservative_credit, 3)
+            
+            # Credit must be positive (we're receiving it)
+            if conservative_credit <= 0:
+                details['failure_reason'] = f'CREDIT_NONPOSITIVE({conservative_credit:.3f})'
+                return None, struct_type, details
         
         # Check liquidity
         min_oi = self.builder_config.min_open_interest

@@ -398,7 +398,8 @@ class StructureAttempt(BaseModel):
     min_oi_found: Optional[int] = None  # Lowest OI on any leg
     min_volume_found: Optional[int] = None  # Lowest volume on any leg
     max_bid_ask_pct: Optional[float] = None  # Widest spread %
-    conservative_credit: Optional[float] = None  # Credit at conservative fills
+    conservative_credit: Optional[float] = None  # Credit at conservative fills (for credit spreads)
+    conservative_debit: Optional[float] = None  # Debit at conservative fills (for debit spreads)
     max_loss_dollars: Optional[float] = None  # Computed max loss
     risk_cap_dollars: Optional[float] = None  # Per-trade risk cap
 

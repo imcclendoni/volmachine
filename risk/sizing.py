@@ -35,7 +35,7 @@ class SizingConfig:
     
     def __post_init__(self):
         if self.what_if_risk_pcts is None:
-            self.what_if_risk_pcts = [2.0, 5.0, 10.0]
+            self.what_if_risk_pcts = [1.0, 2.0, 5.0, 10.0]  # Full sizing ladder
 
 
 @dataclass

@@ -1,15 +1,706 @@
 {
   "report_date": "2025-12-16",
-  "generated_at": "2025-12-16T14:31:59.670176",
+  "generated_at": "2025-12-16T16:21:41.917426",
   "trading_allowed": true,
   "do_not_trade_reasons": [],
+  "provider_status": {
+    "connected": true,
+    "source": "PolygonProvider",
+    "last_run": "2025-12-16T16:21:41.917407"
+  },
+  "universe_scan": {
+    "symbols_scanned": 8,
+    "symbols_with_data": 8,
+    "symbols_with_edges": 4,
+    "symbols_with_trades": 0,
+    "symbol_list": [
+      "SPY",
+      "QQQ",
+      "IWM",
+      "XLK",
+      "TLT",
+      "AAPL",
+      "MSFT",
+      "NVDA"
+    ]
+  },
+  "vrp_metrics": [
+    {
+      "symbol": "AAPL",
+      "atm_iv": 0.1909,
+      "rv_20": 0,
+      "iv_rv_ratio": 1.301,
+      "threshold": 1.12,
+      "status": "ABOVE_THRESHOLD"
+    }
+  ],
   "regime": {
     "state": "chop",
     "confidence": 0.5,
     "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"
   },
-  "edges": [],
-  "candidates": [],
+  "edges": [
+    {
+      "symbol": "IWM",
+      "type": "skew_extreme",
+      "strength": 0.4,
+      "direction": "long",
+      "metrics": {
+        "put_iv_25d": 0.1976,
+        "call_iv_25d": 0.1839,
+        "atm_iv": 0.1915,
+        "put_call_skew": 0.0137,
+        "skew_percentile": 0.0,
+        "is_flat": 1.0,
+        "history_mode": 0.0
+      },
+      "rationale": "Flat skew (absolute): 1.4% <= threshold 2.0%. Using fallback (insufficient history)."
+    },
+    {
+      "symbol": "TLT",
+      "type": "skew_extreme",
+      "strength": 0.4,
+      "direction": "long",
+      "metrics": {
+        "put_iv_25d": 0.1035,
+        "call_iv_25d": 0.0999,
+        "atm_iv": 0.1016,
+        "put_call_skew": 0.0037,
+        "skew_percentile": 0.0,
+        "is_flat": 1.0,
+        "history_mode": 0.0
+      },
+      "rationale": "Flat skew (absolute): 0.4% <= threshold 2.0%. Using fallback (insufficient history)."
+    },
+    {
+      "symbol": "AAPL",
+      "type": "vrp",
+      "strength": 0.2,
+      "direction": "short",
+      "metrics": {
+        "atm_iv": 0.1909,
+        "rv_20d": 0.1467,
+        "iv_rv_ratio": 1.301,
+        "iv_rv_percentile": 50.0,
+        "iv_percentile": 50.0,
+        "rv_percentile": 50.0
+      },
+      "rationale": "VRP edge: IV (19.1%) vs RV (14.7%) = ratio 1.30 (50th percentile). IV is rich relative to realized vol."
+    },
+    {
+      "symbol": "AAPL",
+      "type": "skew_extreme",
+      "strength": 0.4,
+      "direction": "long",
+      "metrics": {
+        "put_iv_25d": 0.1956,
+        "call_iv_25d": 0.1929,
+        "atm_iv": 0.1909,
+        "put_call_skew": 0.0028,
+        "skew_percentile": 0.0,
+        "is_flat": 1.0,
+        "history_mode": 0.0
+      },
+      "rationale": "Flat skew (absolute): 0.3% <= threshold 2.0%. Using fallback (insufficient history)."
+    },
+    {
+      "symbol": "MSFT",
+      "type": "skew_extreme",
+      "strength": 0.4,
+      "direction": "long",
+      "metrics": {
+        "put_iv_25d": 0.2087,
+        "call_iv_25d": 0.2073,
+        "atm_iv": 0.2113,
+        "put_call_skew": 0.0014,
+        "skew_percentile": 0.0,
+        "is_flat": 1.0,
+        "history_mode": 0.0
+      },
+      "rationale": "Flat skew (absolute): 0.1% <= threshold 2.0%. Using fallback (insufficient history)."
+    }
+  ],
+  "candidates": [
+    {
+      "id": "05e7fba1-86f2-4547-aa07-43a5671649f7",
+      "symbol": "IWM",
+      "recommendation": "PASS",
+      "is_valid": false,
+      "rationale": "Position sizing rejected: No valid structure found for risk parameters",
+      "validation_messages": [
+        "No valid structure found for risk parameters"
+      ],
+      "structure": {
+        "type": "credit_spread",
+        "legs": [],
+        "expiration": null,
+        "dte": null,
+        "entry_credit_points": 0.0,
+        "entry_credit_dollars": 0.0,
+        "entry_debit_points": 0.0,
+        "entry_debit_dollars": 0.0,
+        "max_loss_points": 0.0,
+        "max_loss_dollars": 0.0,
+        "max_profit_points": 0.0,
+        "breakevens": []
+      },
+      "sizing": {
+        "recommended_contracts": 0,
+        "risk_per_contract_dollars": 0.0,
+        "total_risk_dollars": 0.0,
+        "what_if_sizes": {}
+      },
+      "edge": {
+        "type": "skew_extreme",
+        "strength": 0.4,
+        "direction": "long",
+        "metrics": {
+          "put_iv_25d": 0.1976,
+          "call_iv_25d": 0.1839,
+          "atm_iv": 0.1915,
+          "put_call_skew": 0.0137,
+          "skew_percentile": 0.0,
+          "is_flat": 1.0,
+          "history_mode": 0.0
+        },
+        "rationale": "Flat skew (absolute): 1.4% <= threshold 2.0%. Using fallback (insufficient history)."
+      },
+      "regime": {
+        "state": "chop",
+        "confidence": 0.5
+      },
+      "pass_diagnostics": [
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 5,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(long_oi=128,min=500)",
+          "min_oi_found": 128,
+          "min_volume_found": 67,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 4,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=64,min=500)",
+          "min_oi_found": 64,
+          "min_volume_found": 98,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 3,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 575,
+          "min_volume_found": 15,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 2,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=339,min=500)",
+          "min_oi_found": 339,
+          "min_volume_found": 48,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 1,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=421,min=500)",
+          "min_oi_found": 421,
+          "min_volume_found": 48,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        }
+      ]
+    },
+    {
+      "id": "bf918b4e-cc9e-4b4f-96bf-b93e2fb9fafb",
+      "symbol": "TLT",
+      "recommendation": "PASS",
+      "is_valid": false,
+      "rationale": "Position sizing rejected: No valid structure found for risk parameters",
+      "validation_messages": [
+        "No valid structure found for risk parameters"
+      ],
+      "structure": {
+        "type": "credit_spread",
+        "legs": [],
+        "expiration": null,
+        "dte": null,
+        "entry_credit_points": 0.0,
+        "entry_credit_dollars": 0.0,
+        "entry_debit_points": 0.0,
+        "entry_debit_dollars": 0.0,
+        "max_loss_points": 0.0,
+        "max_loss_dollars": 0.0,
+        "max_profit_points": 0.0,
+        "breakevens": []
+      },
+      "sizing": {
+        "recommended_contracts": 0,
+        "risk_per_contract_dollars": 0.0,
+        "total_risk_dollars": 0.0,
+        "what_if_sizes": {}
+      },
+      "edge": {
+        "type": "skew_extreme",
+        "strength": 0.4,
+        "direction": "long",
+        "metrics": {
+          "put_iv_25d": 0.1035,
+          "call_iv_25d": 0.0999,
+          "atm_iv": 0.1016,
+          "put_call_skew": 0.0037,
+          "skew_percentile": 0.0,
+          "is_flat": 1.0,
+          "history_mode": 0.0
+        },
+        "rationale": "Flat skew (absolute): 0.4% <= threshold 2.0%. Using fallback (insufficient history)."
+      },
+      "regime": {
+        "state": "chop",
+        "confidence": 0.5
+      },
+      "pass_diagnostics": [
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 5,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=253,min=500)",
+          "min_oi_found": 212,
+          "min_volume_found": 1,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 4,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=253,min=500)",
+          "min_oi_found": 253,
+          "min_volume_found": 1,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 3,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=397,min=500)",
+          "min_oi_found": 397,
+          "min_volume_found": 4,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 2,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=451,min=500)",
+          "min_oi_found": 451,
+          "min_volume_found": 81,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 1,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 1491,
+          "min_volume_found": 81,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        }
+      ]
+    },
+    {
+      "id": "13e446ce-93b3-46fb-8869-1eadf74a67a8",
+      "symbol": "AAPL",
+      "recommendation": "PASS",
+      "is_valid": false,
+      "rationale": "Position sizing rejected: No valid structure found for risk parameters",
+      "validation_messages": [
+        "No valid structure found for risk parameters"
+      ],
+      "structure": {
+        "type": "credit_spread",
+        "legs": [],
+        "expiration": null,
+        "dte": null,
+        "entry_credit_points": 0.0,
+        "entry_credit_dollars": 0.0,
+        "entry_debit_points": 0.0,
+        "entry_debit_dollars": 0.0,
+        "max_loss_points": 0.0,
+        "max_loss_dollars": 0.0,
+        "max_profit_points": 0.0,
+        "breakevens": []
+      },
+      "sizing": {
+        "recommended_contracts": 0,
+        "risk_per_contract_dollars": 0.0,
+        "total_risk_dollars": 0.0,
+        "what_if_sizes": {}
+      },
+      "edge": {
+        "type": "vrp",
+        "strength": 0.2,
+        "direction": "short",
+        "metrics": {
+          "atm_iv": 0.1909,
+          "rv_20d": 0.1467,
+          "iv_rv_ratio": 1.301,
+          "iv_rv_percentile": 50.0,
+          "iv_percentile": 50.0,
+          "rv_percentile": 50.0
+        },
+        "rationale": "VRP edge: IV (19.1%) vs RV (14.7%) = ratio 1.30 (50th percentile). IV is rich relative to realized vol."
+      },
+      "regime": {
+        "state": "chop",
+        "confidence": 0.5
+      },
+      "pass_diagnostics": [
+        {
+          "structure_type": "iron_condor",
+          "width_points": 5,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(iron_condor)",
+          "min_oi_found": 692,
+          "min_volume_found": 129,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": 0.61,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "iron_condor",
+          "width_points": 4,
+          "expiration_dte": 24,
+          "failure_reason": "CREDIT_NONPOSITIVE(-0.087)",
+          "min_oi_found": 692,
+          "min_volume_found": 222,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": -0.087,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "iron_condor",
+          "width_points": 3,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(iron_condor)",
+          "min_oi_found": 692,
+          "min_volume_found": 222,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": 1.063,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "iron_condor",
+          "width_points": 2,
+          "expiration_dte": 24,
+          "failure_reason": "CREDIT_NONPOSITIVE(-0.147)",
+          "min_oi_found": 1204,
+          "min_volume_found": 272,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": -0.147,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "iron_condor",
+          "width_points": 1,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(iron_condor)",
+          "min_oi_found": 1204,
+          "min_volume_found": 178,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": 1.706,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        }
+      ]
+    },
+    {
+      "id": "f0101e27-2527-4bcd-8856-99dd4121c9a0",
+      "symbol": "AAPL",
+      "recommendation": "PASS",
+      "is_valid": false,
+      "rationale": "Position sizing rejected: No valid structure found for risk parameters",
+      "validation_messages": [
+        "No valid structure found for risk parameters"
+      ],
+      "structure": {
+        "type": "credit_spread",
+        "legs": [],
+        "expiration": null,
+        "dte": null,
+        "entry_credit_points": 0.0,
+        "entry_credit_dollars": 0.0,
+        "entry_debit_points": 0.0,
+        "entry_debit_dollars": 0.0,
+        "max_loss_points": 0.0,
+        "max_loss_dollars": 0.0,
+        "max_profit_points": 0.0,
+        "breakevens": []
+      },
+      "sizing": {
+        "recommended_contracts": 0,
+        "risk_per_contract_dollars": 0.0,
+        "total_risk_dollars": 0.0,
+        "what_if_sizes": {}
+      },
+      "edge": {
+        "type": "skew_extreme",
+        "strength": 0.4,
+        "direction": "long",
+        "metrics": {
+          "put_iv_25d": 0.1956,
+          "call_iv_25d": 0.1929,
+          "atm_iv": 0.1909,
+          "put_call_skew": 0.0028,
+          "skew_percentile": 0.0,
+          "is_flat": 1.0,
+          "history_mode": 0.0
+        },
+        "rationale": "Flat skew (absolute): 0.3% <= threshold 2.0%. Using fallback (insufficient history)."
+      },
+      "regime": {
+        "state": "chop",
+        "confidence": 0.5
+      },
+      "pass_diagnostics": [
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 5,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 692,
+          "min_volume_found": 222,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 4,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 692,
+          "min_volume_found": 222,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 3,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 1204,
+          "min_volume_found": 272,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 2,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 1204,
+          "min_volume_found": 178,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 1,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 2090,
+          "min_volume_found": 178,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        }
+      ]
+    },
+    {
+      "id": "879c92a5-5da0-4ee5-9ddb-e0783d5e0d47",
+      "symbol": "MSFT",
+      "recommendation": "PASS",
+      "is_valid": false,
+      "rationale": "Position sizing rejected: No valid structure found for risk parameters",
+      "validation_messages": [
+        "No valid structure found for risk parameters"
+      ],
+      "structure": {
+        "type": "credit_spread",
+        "legs": [],
+        "expiration": null,
+        "dte": null,
+        "entry_credit_points": 0.0,
+        "entry_credit_dollars": 0.0,
+        "entry_debit_points": 0.0,
+        "entry_debit_dollars": 0.0,
+        "max_loss_points": 0.0,
+        "max_loss_dollars": 0.0,
+        "max_profit_points": 0.0,
+        "breakevens": []
+      },
+      "sizing": {
+        "recommended_contracts": 0,
+        "risk_per_contract_dollars": 0.0,
+        "total_risk_dollars": 0.0,
+        "what_if_sizes": {}
+      },
+      "edge": {
+        "type": "skew_extreme",
+        "strength": 0.4,
+        "direction": "long",
+        "metrics": {
+          "put_iv_25d": 0.2087,
+          "call_iv_25d": 0.2073,
+          "atm_iv": 0.2113,
+          "put_call_skew": 0.0014,
+          "skew_percentile": 0.0,
+          "is_flat": 1.0,
+          "history_mode": 0.0
+        },
+        "rationale": "Flat skew (absolute): 0.1% <= threshold 2.0%. Using fallback (insufficient history)."
+      },
+      "regime": {
+        "state": "chop",
+        "confidence": 0.5
+      },
+      "pass_diagnostics": [
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 5,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 950,
+          "min_volume_found": 43,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 4,
+          "expiration_dte": 24,
+          "failure_reason": "BUILDER_FAILED(put_debit_spread)",
+          "min_oi_found": 1630,
+          "min_volume_found": 52,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 3,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(long_oi=234,min=500)",
+          "min_oi_found": 234,
+          "min_volume_found": 52,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 2,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(long_oi=234,min=500)",
+          "min_oi_found": 234,
+          "min_volume_found": 52,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        },
+        {
+          "structure_type": "put_debit_spread",
+          "width_points": 1,
+          "expiration_dte": 24,
+          "failure_reason": "LIQUIDITY_FAIL(short_oi=234,min=500)",
+          "min_oi_found": 234,
+          "min_volume_found": 111,
+          "max_bid_ask_pct": 5.0,
+          "conservative_credit": null,
+          "conservative_debit": null,
+          "max_loss_dollars": null,
+          "risk_cap_dollars": 100.0
+        }
+      ]
+    }
+  ],
   "portfolio": {
     "positions_open": 0,
     "total_max_loss_dollars": 0.0,
