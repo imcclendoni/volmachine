@@ -1,0 +1,21 @@
+{
+  "report_date": "2025-12-16",
+  "generated_at": "2025-12-16T14:07:35.934569",
+  "trading_allowed": true,
+  "do_not_trade_reasons": [],
+  "regime": {
+    "state": "chop",
+    "confidence": 0.5,
+    "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"
+  },
+  "edges": [],
+  "candidates": [],
+  "portfolio": {
+    "positions_open": 0,
+    "total_max_loss_dollars": 0.0,
+    "realized_pnl_today_dollars": 0.0,
+    "unrealized_pnl_dollars": 0.0,
+    "kill_switch_active": false,
+    "kill_switch_reason": null
+  }
+}

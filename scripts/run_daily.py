@@ -113,6 +113,19 @@ def main():
         print(f"\nReports saved:")
         for path in saved:
             print(f"  - {path}")
+        
+        # Also export JSON for Desk UI
+        from engine.report_json import export_report_json
+        json_path = export_report_json(
+            report_date=run_date,
+            regime=report.regime,
+            edges=report.edges,
+            candidates=report.candidates,
+            trading_allowed=report.trading_allowed,
+            do_not_trade_reasons=report.do_not_trade_reasons,
+            output_dir=args.output,
+        )
+        print(f"  - {json_path}")
     
     # Paper trading execution
     if args.paper and report.trading_allowed:
