@@ -17,6 +17,7 @@ class StructuredLogger:
     Structured JSON logger for the engine.
     
     Logs to both file and console with structured JSON format.
+    Creates both daily log (engine_YYYY-MM-DD.jsonl) and per-run log (run_TIMESTAMP.jsonl).
     """
     
     def __init__(
@@ -24,20 +25,30 @@ class StructuredLogger:
         log_dir: str = "./logs",
         level: int = logging.INFO,
         console: bool = True,
+        run_id: Optional[str] = None,
     ):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         
+        # Create runs subdirectory for per-run logs
+        self.runs_dir = self.log_dir / "runs"
+        self.runs_dir.mkdir(parents=True, exist_ok=True)
+        
         self.level = level
         self.console = console
+        self.run_id = run_id or datetime.now().strftime("%Y%m%d_%H%M%S")
+        self.run_log_path: Optional[Path] = None
         
         # Set up logger
         self.logger = logging.getLogger("volmachine")
         self.logger.setLevel(level)
         self.logger.handlers = []  # Clear existing handlers
         
-        # File handler for today
+        # File handler for today (daily log)
         self._setup_file_handler()
+        
+        # Per-run log file
+        self._setup_run_handler()
         
         # Console handler
         if console:
@@ -57,6 +68,15 @@ class StructuredLogger:
         file_handler.setLevel(self.level)
         file_handler.setFormatter(logging.Formatter('%(message)s'))
         self.logger.addHandler(file_handler)
+    
+    def _setup_run_handler(self):
+        """Set up per-run log file."""
+        self.run_log_path = self.runs_dir / f"run_{self.run_id}.jsonl"
+        
+        run_handler = logging.FileHandler(self.run_log_path)
+        run_handler.setLevel(self.level)
+        run_handler.setFormatter(logging.Formatter('%(message)s'))
+        self.logger.addHandler(run_handler)
     
     def _serialize(self, obj: Any) -> Any:
         """Serialize object for JSON."""
