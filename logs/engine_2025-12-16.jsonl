@@ -283,3 +283,8 @@
 {"timestamp": "2025-12-16T10:59:53.813497", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
 {"timestamp": "2025-12-16T10:59:53.916484", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
 {"timestamp": "2025-12-16T11:02:34.137235", "level": "INFO", "event": "edge_detected", "data": {"type": "vrp", "symbol": "QQQ", "strength": 0.8999999999999999}}
+{"timestamp": "2025-12-16T11:10:08.728749", "level": "INFO", "event": "provider_connected", "data": {"provider": "PolygonProvider"}}
+{"timestamp": "2025-12-16T11:10:08.728871", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T11:10:08.831431", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
+{"timestamp": "2025-12-16T11:12:21.025574", "level": "INFO", "event": "edge_detected", "data": {"type": "vrp", "symbol": "QQQ", "strength": 1.0}}
+{"timestamp": "2025-12-16T11:14:02.020131", "level": "ERROR", "event": "edge_detection_failed", "data": {"symbol": "IWM", "error": "1 validation error for Greeks\ndelta\n  Input should be greater than or equal to -1 [type=greater_than_equal, input_value=-1.0000000000078302, input_type=float]\n    For further information visit https://errors.pydantic.dev/2.12/v/greater_than_equal"}}

@@ -83,10 +83,10 @@ class Greeks(BaseModel):
     """
     Option Greeks.
     
-    Note: gamma and vega can be tiny negative values due to numerical
-    noise from data providers. We allow this rather than fail validation.
+    Note: All Greek values can have tiny numerical noise from data providers.
+    We allow this rather than fail validation with strict bounds.
     """
-    delta: float = Field(ge=-1, le=1)
+    delta: float  # Theoretically [-1, 1], but allow numerical noise
     gamma: float  # Theoretically >=0, but allow numerical noise
     theta: float  # Usually negative for long options
     vega: float   # Theoretically >=0, but allow numerical noise

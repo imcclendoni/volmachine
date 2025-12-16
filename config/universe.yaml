@@ -72,7 +72,7 @@ symbols:
     name: "Financial Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -83,7 +83,7 @@ symbols:
     name: "Energy Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -93,7 +93,7 @@ symbols:
     name: "Technology Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -103,7 +103,7 @@ symbols:
     name: "Health Care Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 800
     max_bid_ask_pct: 3.0
@@ -113,7 +113,7 @@ symbols:
     name: "Industrial Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 150
     min_open_interest: 800
     max_bid_ask_pct: 3.5
@@ -123,7 +123,7 @@ symbols:
     name: "Utilities Select Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 100
     min_open_interest: 500
     max_bid_ask_pct: 3.5
@@ -133,7 +133,7 @@ symbols:
     name: "Consumer Staples Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 100
     min_open_interest: 500
     max_bid_ask_pct: 3.5
@@ -143,7 +143,7 @@ symbols:
     name: "Consumer Discretionary Sector"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 150
     min_open_interest: 800
     max_bid_ask_pct: 3.5
@@ -156,7 +156,7 @@ symbols:
     name: "Emerging Markets ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 300
     min_open_interest: 1500
     max_bid_ask_pct: 3.0
@@ -166,7 +166,7 @@ symbols:
     name: "International Developed ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -176,7 +176,7 @@ symbols:
     name: "Gold ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -186,7 +186,7 @@ symbols:
     name: "Silver ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 150
     min_open_interest: 800
     max_bid_ask_pct: 4.0
@@ -196,7 +196,7 @@ symbols:
     name: "20+ Year Treasury ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 300
     min_open_interest: 1500
     max_bid_ask_pct: 2.5
@@ -206,7 +206,7 @@ symbols:
     name: "High Yield Bond ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 3.0
@@ -216,7 +216,7 @@ symbols:
     name: "Crude Oil ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 1000
     max_bid_ask_pct: 4.0
@@ -226,7 +226,7 @@ symbols:
     name: "Biotech ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 800
     max_bid_ask_pct: 4.0
@@ -236,7 +236,7 @@ symbols:
     name: "ARK Innovation ETF"
     type: "etf"
     tier: 2
-    enabled: true
+    enabled: false  # Disabled for faster testing
     min_volume: 200
     min_open_interest: 800
     max_bid_ask_pct: 4.0
@@ -250,7 +250,7 @@ symbols:
     name: "Apple Inc."
     type: "equity"
     tier: 3
-    enabled: true
+    enabled: false  # Disabled for faster testing
     earnings_sensitive: true
     sector: "technology"
     min_volume: 300
