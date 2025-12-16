@@ -127,15 +127,37 @@ class OptionContract(BaseModel):
     @property
     def bid_ask_pct(self) -> float:
         """Bid-ask spread as percentage of mid."""
-        mid = (self.bid + self.ask) / 2
-        if mid == 0:
+        if self.mid is None or self.mid == 0:
             return float('inf')
-        return (self.ask - self.bid) / mid * 100
+        return (self.ask - self.bid) / self.mid * 100
+    
+    @property
+    def quote_is_valid(self) -> bool:
+        """
+        Check if quoted bid/ask are valid.
+        
+        Invalid cases:
+        - bid or ask is 0 or negative
+        - bid > ask (crossed market)
+        - ask is 0 (no offer)
+        """
+        if self.bid <= 0 or self.ask <= 0:
+            return False
+        if self.bid > self.ask:
+            return False
+        return True
     
     def model_post_init(self, __context):
-        """Calculate mid price if not provided."""
-        if self.mid is None and self.bid >= 0 and self.ask >= 0:
-            self.mid = (self.bid + self.ask) / 2
+        """
+        Calculate mid price if not provided AND quote is valid.
+        
+        If bid/ask invalid (0, bid>ask), set mid=None.
+        """
+        if self.mid is None:
+            if self.quote_is_valid:
+                self.mid = (self.bid + self.ask) / 2
+            else:
+                self.mid = None
 
 
 class OptionChain(BaseModel):
@@ -164,15 +186,40 @@ class OptionChain(BaseModel):
         self,
         exp_date: date,
         strike: float,
-        option_type: OptionType
+        option_type: OptionType,
+        tolerance: float = 0.01  # Default 1 cent tolerance
     ) -> Optional[OptionContract]:
-        """Get a specific contract."""
-        for c in self.contracts:
-            if (c.expiration == exp_date and 
-                c.strike == strike and 
-                c.option_type == option_type):
+        """
+        Get a specific contract with strike tolerance.
+        
+        Avoids float-equality issues by using tolerance-based matching.
+        Selects from actual available chain strikes.
+        
+        Args:
+            exp_date: Expiration date
+            strike: Target strike price
+            option_type: CALL or PUT
+            tolerance: Strike matching tolerance (default: 0.01)
+            
+        Returns:
+            OptionContract or None
+        """
+        # Filter to matching expiration and type
+        candidates = [
+            c for c in self.contracts
+            if c.expiration == exp_date and c.option_type == option_type
+        ]
+        
+        if not candidates:
+            return None
+        
+        # Find exact match within tolerance
+        for c in candidates:
+            if abs(c.strike - strike) <= tolerance:
                 return c
-        return None
+        
+        # If no exact match, return closest strike
+        return min(candidates, key=lambda c: abs(c.strike - strike))
 
 
 class VolSurface(BaseModel):

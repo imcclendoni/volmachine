@@ -284,15 +284,43 @@ def time_to_expiry_years(expiration: date, as_of: Optional[date] = None) -> floa
     return days / 365.0
 
 
-def get_risk_free_rate() -> float:
+def get_risk_free_rate(config: dict = None) -> float:
     """
-    Get current risk-free rate approximation.
+    Get current risk-free rate from config or default.
     
-    In production, this should fetch from a data source.
-    Using a reasonable default for now.
+    Args:
+        config: Optional config dict with market.risk_free_rate
+        
+    Returns:
+        Risk-free rate (annualized, e.g., 0.045 for 4.5%)
     """
-    # TODO: Fetch from treasury data or config
-    return 0.05  # 5% - reasonable as of 2024
+    if config and 'market' in config:
+        return config['market'].get('risk_free_rate', 0.045)
+    return 0.045  # Default 4.5%
+
+
+def get_dividend_yield(symbol: str, config: dict = None) -> float:
+    """
+    Get dividend yield for a symbol from config or default.
+    
+    Args:
+        symbol: Underlying symbol (e.g., 'SPY')
+        config: Optional config dict with market.dividend_yields
+        
+    Returns:
+        Annualized continuous dividend yield (e.g., 0.013 for 1.3%)
+    """
+    if config and 'market' in config:
+        yields = config['market'].get('dividend_yields', {})
+        return yields.get(symbol, yields.get('default', 0.0))
+    
+    # Hardcoded defaults for common ETFs
+    defaults = {
+        'SPY': 0.013,
+        'QQQ': 0.005,
+        'IWM': 0.011,
+    }
+    return defaults.get(symbol, 0.0)
 
 
 # ============================================================================
@@ -307,7 +335,9 @@ def price_option(
     iv: float,
     as_of: Optional[date] = None,
     risk_free_rate: Optional[float] = None,
-    dividend_yield: float = 0.0
+    dividend_yield: Optional[float] = None,
+    symbol: Optional[str] = None,
+    config: dict = None,
 ) -> float:
     """
     Convenience function to price an option.
@@ -319,17 +349,20 @@ def price_option(
         expiration: Expiration date
         iv: Implied volatility (e.g., 0.20 for 20%)
         as_of: As-of date (defaults to today)
-        risk_free_rate: Risk-free rate (defaults to current estimate)
-        dividend_yield: Dividend yield
+        risk_free_rate: Override risk-free rate
+        dividend_yield: Override dividend yield
+        symbol: Symbol for looking up dividend yield from config
+        config: Config dict for market parameters
         
     Returns:
         Theoretical option price
     """
     side = OptionSide.CALL if option_type.lower() == "call" else OptionSide.PUT
     t = time_to_expiry_years(expiration, as_of)
-    r = risk_free_rate if risk_free_rate is not None else get_risk_free_rate()
+    r = risk_free_rate if risk_free_rate is not None else get_risk_free_rate(config)
+    q = dividend_yield if dividend_yield is not None else get_dividend_yield(symbol or "", config)
     
-    return bs_price(side, spot, strike, t, r, iv, dividend_yield)
+    return bs_price(side, spot, strike, t, r, iv, q)
 
 
 def calculate_greeks(
@@ -340,16 +373,31 @@ def calculate_greeks(
     iv: float,
     as_of: Optional[date] = None,
     risk_free_rate: Optional[float] = None,
-    dividend_yield: float = 0.0
+    dividend_yield: Optional[float] = None,
+    symbol: Optional[str] = None,
+    config: dict = None,
 ) -> BSOutput:
     """
     Convenience function to calculate Greeks.
+    
+    Args:
+        option_type: "call" or "put"
+        spot: Underlying price
+        strike: Strike price
+        expiration: Expiration date
+        iv: Implied volatility
+        as_of: As-of date
+        risk_free_rate: Override risk-free rate
+        dividend_yield: Override dividend yield
+        symbol: Symbol for looking up dividend yield from config
+        config: Config dict for market parameters
     
     Returns:
         BSOutput with all Greeks
     """
     side = OptionSide.CALL if option_type.lower() == "call" else OptionSide.PUT
     t = time_to_expiry_years(expiration, as_of)
-    r = risk_free_rate if risk_free_rate is not None else get_risk_free_rate()
+    r = risk_free_rate if risk_free_rate is not None else get_risk_free_rate(config)
+    q = dividend_yield if dividend_yield is not None else get_dividend_yield(symbol or "", config)
     
-    return bs_greeks(side, spot, strike, t, r, iv, dividend_yield)
+    return bs_greeks(side, spot, strike, t, r, iv, q)

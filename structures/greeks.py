@@ -59,7 +59,8 @@ def calculate_contract_greeks(
     """
     Calculate Greeks for an option contract.
     
-    Uses contract's IV if available, otherwise requires IV to be provided.
+    Uses contract's IV if available. If IV is missing but mid price exists,
+    attempts to solve for IV using the IV solver.
     
     Args:
         contract: The option contract
@@ -71,9 +72,34 @@ def calculate_contract_greeks(
     Returns:
         Greeks dataclass
     """
-    if contract.iv is None or contract.iv <= 0:
-        # If no IV, try to back out from mid price
-        # For now, return zeros
+    from structures.pricing import implied_volatility
+    
+    iv = contract.iv
+    
+    # If no IV, try to solve from mid price
+    if iv is None or iv <= 0:
+        if contract.mid and contract.mid > 0:
+            t = time_to_expiry_years(contract.expiration, as_of)
+            if t > 0:
+                r = risk_free_rate if risk_free_rate is not None else get_risk_free_rate()
+                option_side = (
+                    OptionSide.CALL if contract.option_type.value == "call" 
+                    else OptionSide.PUT
+                )
+                solved_iv = implied_volatility(
+                    option_side,
+                    contract.mid,
+                    spot,
+                    contract.strike,
+                    t,
+                    r,
+                    dividend_yield
+                )
+                if solved_iv is not None:
+                    iv = solved_iv
+    
+    # If still no IV, return zeros
+    if iv is None or iv <= 0:
         return Greeks(delta=0, gamma=0, theta=0, vega=0)
     
     option_type = (
@@ -89,7 +115,7 @@ def calculate_contract_greeks(
         contract.strike,
         t,
         r,
-        contract.iv,
+        iv,
         dividend_yield
     )
     
