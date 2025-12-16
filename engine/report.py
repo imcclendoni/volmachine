@@ -119,6 +119,61 @@ def generate_markdown_report(report: DailyReport) -> str:
                 lines.append("</details>")
                 lines.append("")
             
+            # Probability Metrics (if available)
+            if candidate.probability_metrics:
+                pm = candidate.probability_metrics
+                lines.append("<details>")
+                lines.append("<summary>📊 Probability Metrics (click to expand)</summary>")
+                lines.append("")
+                lines.append(f"⚠️ *{pm.get('warning', 'Model-based estimates only.')}*")
+                lines.append("")
+                
+                # Core probabilities
+                lines.append("**Core Probabilities:**")
+                lines.append("| Metric | Value |")
+                lines.append("|--------|-------|")
+                lines.append(f"| Model PoP (expiration) | {pm.get('pop_expiry', 0):.1%} |")
+                lines.append(f"| P(Short Strike OTM) | {pm.get('p_otm_short_strike', 0):.1%} |")
+                lines.append(f"| Breakeven Distance | {pm.get('breakeven_distance_pct', 0):.1f}% from spot |")
+                lines.append("")
+                
+                # Expected value
+                lines.append("**Expected Value:**")
+                lines.append("| Metric | Value |")
+                lines.append("|--------|-------|")
+                lines.append(f"| EV at Expiration | ${pm.get('expected_pnl_expiry', 0):+.0f} |")
+                lines.append(f"| EV per $1 Risk | ${pm.get('ev_per_dollar_risk', 0):.3f} |")
+                lines.append("")
+                
+                # Honesty metrics
+                lines.append("**Honesty Metrics:**")
+                lines.append("| Metric | Value |")
+                lines.append("|--------|-------|")
+                lines.append(f"| Credit / Width | {pm.get('credit_to_width_ratio', 0):.1%} |")
+                lines.append(f"| Reward / Risk | {pm.get('reward_to_risk_ratio', 0):.2f}:1 |")
+                lines.append("")
+                
+                # Stress scenarios
+                stress = pm.get("stress_scenarios", {})
+                if stress:
+                    lines.append("**Stress Scenarios:**")
+                    lines.append("| Scenario | PnL |")
+                    lines.append("|----------|-----|")
+                    for scenario, pnl in sorted(stress.items()):
+                        lines.append(f"| {scenario} | ${pnl:+.0f} |")
+                    lines.append("")
+                
+                # Assumptions
+                assumptions = pm.get("assumptions", {})
+                if assumptions:
+                    lines.append("**Model Assumptions:**")
+                    lines.append(f"- IV: {assumptions.get('iv', 0):.1%}")
+                    lines.append(f"- Time: {assumptions.get('time_to_expiry_days', 0):.0f} days")
+                    lines.append(f"- Rate: {assumptions.get('risk_free_rate', 0):.2%}")
+                
+                lines.append("</details>")
+                lines.append("")
+            
             lines.append("---")
             lines.append("")
     else:

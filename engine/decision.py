@@ -128,6 +128,64 @@ def create_trade_candidate(
             # If explanation generation fails, continue without
             pass
     
+    # Calculate probability metrics
+    probability_metrics = None
+    try:
+        from engine.probability import calculate_probability_metrics
+        from structures.pricing import get_risk_free_rate, get_dividend_yield, time_to_expiry_years
+        
+        # Get expiration from first leg
+        if structure.legs:
+            expiration = structure.legs[0].contract.expiration
+            spot = structure.legs[0].contract.symbol  # Will need to pass spot price
+            
+            # Get IV from structure or first leg
+            iv = structure.legs[0].contract.iv or 0.20  # Default 20%
+            
+            # Use chain timestamp if available (from context), else today
+            as_of = risk_budget.get("as_of_date") if risk_budget else None
+            
+            # Get market params
+            config = risk_budget.get("config") if risk_budget else None
+            r = get_risk_free_rate(config)
+            q = get_dividend_yield(symbol, config)
+            
+            # Get spot price from risk_budget or estimate from structure
+            spot_price = risk_budget.get("spot_price") if risk_budget else None
+            if not spot_price and structure.legs:
+                # Estimate from first leg strike (ATM assumption)
+                spot_price = structure.legs[0].contract.strike
+            
+            if spot_price:
+                t = time_to_expiry_years(expiration, as_of)
+                
+                metrics = calculate_probability_metrics(
+                    structure=structure,
+                    spot=spot_price,
+                    iv=iv,
+                    time_to_expiry=t,
+                    risk_free_rate=r,
+                    dividend_yield=q,
+                    as_of_date=as_of,
+                )
+                
+                # Convert to dict for schema
+                probability_metrics = {
+                    "pop_expiry": metrics.pop_expiry,
+                    "p_otm_short_strike": metrics.p_otm_short_strike,
+                    "expected_pnl_expiry": metrics.expected_pnl_expiry,
+                    "breakeven_distance_pct": metrics.breakeven_distance_pct,
+                    "credit_to_width_ratio": metrics.credit_to_width_ratio,
+                    "reward_to_risk_ratio": metrics.reward_to_risk_ratio,
+                    "ev_per_dollar_risk": metrics.ev_per_dollar_risk,
+                    "stress_scenarios": metrics.stress_scenarios,
+                    "assumptions": metrics.assumptions,
+                    "warning": metrics.warning,
+                }
+    except Exception:
+        # If probability calculation fails, continue without
+        pass
+    
     return TradeCandidate(
         id=str(uuid4()),
         timestamp=datetime.now(),
@@ -145,6 +203,7 @@ def create_trade_candidate(
         edge_explanation=edge_explanation,
         candidate_explanation=candidate_explanation,
         quality_score=quality_score,
+        probability_metrics=probability_metrics,
     )
 
 

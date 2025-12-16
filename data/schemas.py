@@ -406,6 +406,9 @@ class TradeCandidate(BaseModel):
     
     # Quality score (0-100)
     quality_score: Optional[dict] = None  # {total, edge_strength, regime_fit, liquidity, pricing_quality, grade}
+    
+    # Probability metrics (model-based, NOT predictive)
+    probability_metrics: Optional[dict] = None  # ProbabilityMetrics as dict
 
 
 # ============================================================================
