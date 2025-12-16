@@ -1,0 +1,6 @@
+{"timestamp": "2025-12-15T22:53:32.282721", "level": "ERROR", "event": "provider_connect_failed", "data": {"error": "Invalid Polygon API key"}}
+{"timestamp": "2025-12-15T22:53:32.283073", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-15"}}
+{"timestamp": "2025-12-15T22:53:32.322288", "level": "ERROR", "event": "regime_classification_failed", "data": {"error": "Polygon API error: 401 - {\"status\":\"ERROR\",\"request_id\":\"b128374d6c9ac1541baf33ff0a2dd9b4\",\"error\":\"Unknown API Key\"}"}}
+{"timestamp": "2025-12-15T22:53:32.363391", "level": "ERROR", "event": "edge_detection_failed", "data": {"symbol": "SPY", "error": "Polygon API error: 401 - {\"status\":\"ERROR\",\"request_id\":\"9d1e2cf73220c8b2fe75a88848d91ca0\",\"error\":\"Unknown API Key\"}"}}
+{"timestamp": "2025-12-15T22:53:32.402559", "level": "ERROR", "event": "edge_detection_failed", "data": {"symbol": "QQQ", "error": "Polygon API error: 401 - {\"status\":\"ERROR\",\"request_id\":\"d2d0e4ae7c6cd78934906d1b7f2fd339\",\"error\":\"Unknown API Key\"}"}}
+{"timestamp": "2025-12-15T22:53:32.403859", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}

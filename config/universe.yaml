@@ -1,0 +1,116 @@
+---
+# Options Volatility Trading Engine - Universe Configuration
+# ===========================================================
+
+# Default settings applied to all symbols
+defaults:
+  enabled: true
+  min_dte: 7
+  max_dte: 60
+  min_volume: 100
+  min_open_interest: 500
+  max_bid_ask_pct: 5.0
+  
+  # Structure preferences
+  structures_allowed:
+    - credit_spread
+    - debit_spread
+    - iron_condor
+    - butterfly
+    - calendar
+    - diagonal
+
+# Asset Universe
+symbols:
+  # ETFs - Primary Focus
+  SPY:
+    name: "S&P 500 ETF"
+    type: "etf"
+    enabled: true
+    # Override defaults for SPY (most liquid)
+    min_volume: 500
+    min_open_interest: 2000
+    max_bid_ask_pct: 2.0
+    # Preferred expiration cycles
+    expiry_preference: ["monthly", "weekly"]
+    # VIX correlation proxy
+    vol_index: "VIX"
+    
+  QQQ:
+    name: "Nasdaq 100 ETF"
+    type: "etf"
+    enabled: true
+    min_volume: 300
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    expiry_preference: ["monthly", "weekly"]
+    vol_index: "VXN"  # If available
+    
+  IWM:
+    name: "Russell 2000 ETF"
+    type: "etf"
+    enabled: false  # Disabled for MV1
+    min_volume: 200
+    min_open_interest: 500
+    expiry_preference: ["monthly"]
+    vol_index: "RVX"  # If available
+
+  # Individual Equities - Optional for later
+  AAPL:
+    name: "Apple Inc."
+    type: "equity"
+    enabled: false  # Disabled for MV1
+    earnings_sensitive: true
+    sector: "technology"
+    
+  MSFT:
+    name: "Microsoft Corp."
+    type: "equity"
+    enabled: false
+    earnings_sensitive: true
+    sector: "technology"
+    
+  NVDA:
+    name: "NVIDIA Corp."
+    type: "equity"
+    enabled: false
+    earnings_sensitive: true
+    sector: "technology"
+    # High vol equity - special handling
+    min_dte: 14  # Give more time for high vol
+    structures_allowed:
+      - debit_spread
+      - butterfly
+      - calendar
+
+# Volatility Index References
+vol_indices:
+  VIX:
+    description: "CBOE Volatility Index (SPX)"
+    underlying: "SPY"
+    data_source: "provider"  # or "csv" for manual input
+    
+  VVIX:
+    description: "VIX of VIX"
+    data_source: "provider"
+    
+  VXN:
+    description: "CBOE Nasdaq Volatility"
+    underlying: "QQQ"
+    data_source: "csv"  # Often need manual input
+
+# Event Calendar Sources
+events:
+  earnings:
+    source: "csv"  # Manual CSV input
+    file: "./data/events/earnings_calendar.csv"
+    
+  economic:
+    source: "csv"
+    file: "./data/events/economic_calendar.csv"
+    # Key events to track
+    tracked_events:
+      - "FOMC"
+      - "CPI"
+      - "NFP"
+      - "GDP"
