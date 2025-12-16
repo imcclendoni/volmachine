@@ -14,7 +14,7 @@ IMPORTANT DISCLAIMERS:
 import math
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 
 from scipy.stats import norm
 
@@ -36,20 +36,23 @@ class ProbabilityMetrics:
     
     # Core probabilities
     pop_expiry: float           # Model PoP (expiration) - P(profit at expiry)
-    p_otm_short_strike: float   # P(short strike finishes OTM)
     
-    # Expected value
-    expected_pnl_expiry: float  # EV at expiration (dollars) - BINARY APPROXIMATION
+    # Iron condor specific
+    p_inside_short_strikes: float  # P(S_T between short put and short call)
+    p_between_breakevens: float    # P(BE_low < S_T < BE_high)
+    
+    # Expected value - BINARY APPROXIMATION (do NOT use for ranking)
+    expected_pnl_expiry_binary: float  # EV at expiration (dollars)
     
     # Distance metrics
-    breakeven_distance_pct: float  # Distance from spot to breakeven (%)
+    breakeven_distance_pct: float  # Distance from spot to nearest breakeven (%)
     
     # Honesty metrics (keep you honest)
     credit_to_width_ratio: float   # credit / width
     reward_to_risk_ratio: float    # max_profit / max_loss
-    ev_per_dollar_risk: float      # EV / max_loss
+    ev_per_dollar_risk_binary: float  # EV / max_loss (binary approx)
     
-    # Stress scenarios
+    # Stress scenarios (flat IV shift)
     stress_scenarios: Dict[str, float]  # scenario -> PnL
     
     # Assumptions used (for transparency)
@@ -59,8 +62,70 @@ class ProbabilityMetrics:
     warning: str = (
         "Model PoP assumes lognormal distribution at expiration. "
         "Real outcomes depend on exits, gaps, volatility changes, and execution. "
-        "EV is a binary approximation (full win or full loss)."
+        "EV is a binary approximation (win full or lose full) - NOT for ranking."
     )
+
+
+def _clamp_probability(p: float) -> float:
+    """Clamp probability to [0, 1]."""
+    return max(0.0, min(1.0, p))
+
+
+def _prob_below(
+    spot: float, 
+    strike: float, 
+    iv: float, 
+    t: float, 
+    r: float, 
+    q: float
+) -> float:
+    """
+    P(S_T < strike) under lognormal dynamics.
+    
+    Uses -d2 in norm.cdf: P(S_T < K) = N(-d2)
+    """
+    if t <= 0:
+        return 1.0 if spot < strike else 0.0
+    if iv <= 0:
+        iv = 0.0001
+    if strike <= 0:
+        return 0.0
+    
+    d2 = (math.log(spot / strike) + (r - q - 0.5 * iv**2) * t) / (iv * math.sqrt(t))
+    return _clamp_probability(norm.cdf(-d2))
+
+
+def _prob_above(
+    spot: float, 
+    strike: float, 
+    iv: float, 
+    t: float, 
+    r: float, 
+    q: float
+) -> float:
+    """
+    P(S_T > strike) = 1 - P(S_T < strike)
+    """
+    return _clamp_probability(1.0 - _prob_below(spot, strike, iv, t, r, q))
+
+
+def _prob_between(
+    spot: float,
+    low: float,
+    high: float,
+    iv: float,
+    t: float,
+    r: float,
+    q: float,
+) -> float:
+    """
+    P(low < S_T < high) = P(S_T < high) - P(S_T < low)
+    """
+    if low >= high:
+        return 0.0
+    p_below_high = _prob_below(spot, high, iv, t, r, q)
+    p_below_low = _prob_below(spot, low, iv, t, r, q)
+    return _clamp_probability(p_below_high - p_below_low)
 
 
 def calculate_probability_metrics(
@@ -87,13 +152,15 @@ def calculate_probability_metrics(
     Returns:
         ProbabilityMetrics with all computed values
     """
+    t, r, q = time_to_expiry, risk_free_rate, dividend_yield
+    
     # Store assumptions
     assumptions = {
         "spot": spot,
         "iv": iv,
-        "time_to_expiry_days": time_to_expiry * 365,
-        "risk_free_rate": risk_free_rate,
-        "dividend_yield": dividend_yield,
+        "time_to_expiry_days": t * 365,
+        "risk_free_rate": r,
+        "dividend_yield": q,
         "as_of": as_of_date.isoformat() if as_of_date else "unknown",
     }
     
@@ -102,120 +169,67 @@ def calculate_probability_metrics(
     max_loss_points = structure.max_loss or 0
     max_profit_points = structure.max_profit or 0
     credit_points = structure.entry_credit or 0
-    debit_points = structure.entry_debit or 0
     
-    # Width in dollars
-    width_dollars = width_points * 100 if width_points else 0
     max_loss_dollars = max_loss_points * 100
     max_profit_dollars = max_profit_points * 100
     
-    # Get key strikes
-    short_strike = _get_short_strike(structure)
-    breakeven = structure.breakevens[0] if structure.breakevens else spot
+    # Get short strikes for iron condor
+    short_put_strike, short_call_strike = _get_short_strikes_by_type(structure)
+    breakevens = structure.breakevens
     
-    # Calculate P(OTM) for short strike
-    p_otm_short = _prob_otm(
-        spot, short_strike, 
-        _is_call_side(structure),
-        iv, time_to_expiry, 
-        risk_free_rate, dividend_yield
-    ) if short_strike else 0.5
+    # Calculate P(inside short strikes) - for iron condors
+    if short_put_strike and short_call_strike and short_put_strike < short_call_strike:
+        p_inside_short_strikes = _prob_between(
+            spot, short_put_strike, short_call_strike, iv, t, r, q
+        )
+    else:
+        p_inside_short_strikes = 0.5  # Default
+    
+    # Calculate P(between breakevens)
+    if len(breakevens) >= 2:
+        be_low, be_high = min(breakevens), max(breakevens)
+        p_between_breakevens = _prob_between(spot, be_low, be_high, iv, t, r, q)
+    else:
+        p_between_breakevens = 0.5
     
     # Calculate PoP at expiration
-    pop_expiry = _calculate_pop_expiry(
-        structure, spot, iv, 
-        time_to_expiry, risk_free_rate, dividend_yield
-    )
+    pop_expiry = _calculate_pop_expiry(structure, spot, iv, t, r, q)
     
-    # Breakeven distance
-    breakeven_distance_pct = abs(spot - breakeven) / spot * 100 if spot > 0 else 0
+    # Breakeven distance (to nearest)
+    if breakevens:
+        distances = [abs(spot - be) / spot * 100 for be in breakevens]
+        breakeven_distance_pct = min(distances)
+    else:
+        breakeven_distance_pct = 0
     
     # Honesty metrics
     credit_to_width = credit_points / width_points if width_points > 0 else 0
     reward_to_risk = max_profit_points / max_loss_points if max_loss_points > 0 else 0
     
-    # Expected PnL at expiration (BINARY APPROXIMATION)
+    # Expected PnL at expiration (BINARY APPROXIMATION - DO NOT USE FOR RANKING)
     # EV = P(win) * max_profit - P(lose) * max_loss
-    # This is simplified - real EV would integrate the payoff function
-    expected_pnl = (
+    expected_pnl_binary = (
         pop_expiry * max_profit_dollars - 
         (1 - pop_expiry) * max_loss_dollars
     )
     
-    ev_per_dollar_risk = expected_pnl / max_loss_dollars if max_loss_dollars > 0 else 0
+    ev_per_dollar_risk_binary = expected_pnl_binary / max_loss_dollars if max_loss_dollars > 0 else 0
     
-    # Stress scenarios
-    stress = _calculate_stress_scenarios(
-        structure, spot, iv, time_to_expiry, 
-        risk_free_rate, dividend_yield
-    )
+    # Stress scenarios (FLAT IV shift - same IV for all legs)
+    stress = _calculate_stress_scenarios(structure, spot, iv, t, r, q)
     
     return ProbabilityMetrics(
         pop_expiry=pop_expiry,
-        p_otm_short_strike=p_otm_short,
-        expected_pnl_expiry=expected_pnl,
+        p_inside_short_strikes=p_inside_short_strikes,
+        p_between_breakevens=p_between_breakevens,
+        expected_pnl_expiry_binary=expected_pnl_binary,
         breakeven_distance_pct=breakeven_distance_pct,
         credit_to_width_ratio=credit_to_width,
         reward_to_risk_ratio=reward_to_risk,
-        ev_per_dollar_risk=ev_per_dollar_risk,
+        ev_per_dollar_risk_binary=ev_per_dollar_risk_binary,
         stress_scenarios=stress,
         assumptions=assumptions,
     )
-
-
-def _prob_otm(
-    spot: float, 
-    strike: float, 
-    is_call: bool,
-    iv: float, 
-    t: float, 
-    r: float, 
-    q: float
-) -> float:
-    """
-    Calculate probability of finishing OTM.
-    
-    For calls: P(S_T < K)
-    For puts: P(S_T > K)
-    """
-    if t <= 0:
-        if is_call:
-            return 1.0 if spot < strike else 0.0
-        else:
-            return 1.0 if spot > strike else 0.0
-    
-    if iv <= 0:
-        iv = 0.0001
-    
-    # d2 from Black-Scholes
-    d2 = (math.log(spot / strike) + (r - q - 0.5 * iv**2) * t) / (iv * math.sqrt(t))
-    
-    if is_call:
-        # P(S_T < K) = N(-d2)
-        return norm.cdf(-d2)
-    else:
-        # P(S_T > K) = N(d2)
-        return norm.cdf(d2)
-
-
-def _prob_itm(
-    spot: float, 
-    strike: float, 
-    is_call: bool,
-    iv: float, 
-    t: float, 
-    r: float, 
-    q: float
-) -> float:
-    """Probability of finishing ITM."""
-    return 1 - _prob_otm(spot, strike, is_call, iv, t, r, q)
-
-
-def _d2(spot: float, strike: float, iv: float, t: float, r: float, q: float) -> float:
-    """Calculate d2 for probability calculations."""
-    if t <= 0 or iv <= 0:
-        return 0
-    return (math.log(spot / strike) + (r - q - 0.5 * iv**2) * t) / (iv * math.sqrt(t))
 
 
 def _calculate_pop_expiry(
@@ -229,10 +243,9 @@ def _calculate_pop_expiry(
     """
     Calculate probability of profit at expiration.
     
-    For credit structures: P(S_T stays within profit zone)
-    For debit structures: P(S_T moves beyond breakeven)
-    
-    IRON CONDOR: Uses BOTH breakevens - P(BE_low < S_T < BE_high)
+    IRON CONDOR / BUTTERFLY: P(BE_low < S_T < BE_high)
+    CREDIT SPREAD: P(S_T stays OTM of breakeven)
+    DEBIT SPREAD: P(S_T moves through breakeven)
     """
     structure_type = structure.structure_type
     breakevens = structure.breakevens
@@ -240,77 +253,99 @@ def _calculate_pop_expiry(
     # IRON CONDOR: profit if spot stays between both breakevens
     if structure_type == StructureType.IRON_CONDOR:
         if len(breakevens) >= 2:
-            be_low = min(breakevens)
-            be_high = max(breakevens)
-            # P(BE_low < S_T < BE_high) = P(S_T < BE_high) - P(S_T < BE_low)
-            p_below_high = norm.cdf(_d2(spot, be_high, iv, t, r, q))
-            p_below_low = norm.cdf(_d2(spot, be_low, iv, t, r, q))
-            return p_below_high - p_below_low
-        else:
-            # Fallback: use single breakeven
-            breakeven = breakevens[0] if breakevens else spot
-            return 0.5  # No good estimate without both breakevens
+            be_low, be_high = min(breakevens), max(breakevens)
+            return _prob_between(spot, be_low, be_high, iv, t, r, q)
+        return 0.5  # No good estimate without both breakevens
+    
+    # BUTTERFLY / IRON BUTTERFLY: profit in narrow range around center
+    if structure_type in (StructureType.BUTTERFLY, StructureType.IRON_BUTTERFLY):
+        if len(breakevens) >= 2:
+            be_low, be_high = min(breakevens), max(breakevens)
+            return _prob_between(spot, be_low, be_high, iv, t, r, q)
+        return 0.3  # Conservative default
     
     # CREDIT SPREAD: profit if S_T stays OTM of breakeven
     if structure_type == StructureType.CREDIT_SPREAD:
         breakeven = breakevens[0] if breakevens else spot
         if _is_call_side(structure):
             # Call credit spread: profit if S_T < breakeven
-            return _prob_otm(spot, breakeven, True, iv, t, r, q)
+            return _prob_below(spot, breakeven, iv, t, r, q)
         else:
             # Put credit spread: profit if S_T > breakeven
-            return _prob_otm(spot, breakeven, False, iv, t, r, q)
+            return _prob_above(spot, breakeven, iv, t, r, q)
     
     # DEBIT SPREAD: profit if S_T moves through breakeven
     if structure_type == StructureType.DEBIT_SPREAD:
         breakeven = breakevens[0] if breakevens else spot
         if _is_call_side(structure):
             # Call debit: profit if S_T > breakeven
-            return _prob_itm(spot, breakeven, True, iv, t, r, q)
+            return _prob_above(spot, breakeven, iv, t, r, q)
         else:
             # Put debit: profit if S_T < breakeven
-            return _prob_itm(spot, breakeven, False, iv, t, r, q)
+            return _prob_below(spot, breakeven, iv, t, r, q)
     
-    # BUTTERFLY / IRON BUTTERFLY: profit in narrow range around center
-    if structure_type in (StructureType.BUTTERFLY, StructureType.IRON_BUTTERFLY):
-        if len(breakevens) >= 2:
-            be_low, be_high = min(breakevens), max(breakevens)
-            p_below_high = norm.cdf(_d2(spot, be_high, iv, t, r, q))
-            p_below_low = norm.cdf(_d2(spot, be_low, iv, t, r, q))
-            return p_below_high - p_below_low
-        return 0.3  # Conservative default for butterflies
-    
-    # Default: 50%
     return 0.5
 
 
 def _get_structure_width(structure: OptionStructure) -> float:
-    """Get the width of the structure in points."""
+    """
+    Get the width of the structure in points.
+    
+    For iron condors: computes put wing and call wing separately by option type,
+    returns the max.
+    """
     if not structure.legs or len(structure.legs) < 2:
         return 0
     
-    strikes = sorted([leg.contract.strike for leg in structure.legs])
+    structure_type = structure.structure_type
     
+    # Iron condor: compute by option type, not by sorted strikes
+    if structure_type == StructureType.IRON_CONDOR and len(structure.legs) == 4:
+        put_strikes = []
+        call_strikes = []
+        
+        for leg in structure.legs:
+            if leg.contract.option_type == OptionType.PUT:
+                put_strikes.append(leg.contract.strike)
+            else:
+                call_strikes.append(leg.contract.strike)
+        
+        put_width = max(put_strikes) - min(put_strikes) if len(put_strikes) >= 2 else 0
+        call_width = max(call_strikes) - min(call_strikes) if len(call_strikes) >= 2 else 0
+        
+        return max(put_width, call_width)
+    
+    # For other structures: simple width
+    strikes = sorted([leg.contract.strike for leg in structure.legs])
     if len(strikes) == 2:
         return strikes[1] - strikes[0]
-    elif len(strikes) == 4:  # Iron condor
-        # Use the wider wing
-        put_width = strikes[1] - strikes[0]
-        call_width = strikes[3] - strikes[2]
-        return max(put_width, call_width)
     
     return strikes[-1] - strikes[0] if strikes else 0
 
 
-def _get_short_strike(structure: OptionStructure) -> Optional[float]:
-    """Get the primary short strike."""
-    if not structure.legs:
-        return None
+def _get_short_strikes_by_type(
+    structure: OptionStructure
+) -> Tuple[Optional[float], Optional[float]]:
+    """
+    Get short strikes by option type.
     
-    short_legs = [leg for leg in structure.legs if leg.quantity < 0]
-    if short_legs:
-        return short_legs[0].contract.strike
-    return None
+    Returns:
+        (short_put_strike, short_call_strike)
+    """
+    short_put = None
+    short_call = None
+    
+    if not structure.legs:
+        return (None, None)
+    
+    for leg in structure.legs:
+        if leg.quantity < 0:  # Short
+            if leg.contract.option_type == OptionType.PUT:
+                short_put = leg.contract.strike
+            else:
+                short_call = leg.contract.strike
+    
+    return (short_put, short_call)
 
 
 def _is_call_side(structure: OptionStructure) -> bool:
@@ -322,7 +357,6 @@ def _is_call_side(structure: OptionStructure) -> bool:
         if leg.quantity < 0:  # Short leg determines side
             return leg.contract.option_type == OptionType.CALL
     
-    # Default based on first leg
     return structure.legs[0].contract.option_type == OptionType.CALL
 
 
@@ -337,19 +371,20 @@ def _calculate_stress_scenarios(
     """
     Calculate PnL under stress scenarios.
     
+    FLAT IV SHIFT: Same IV applied to all legs (not per-leg IV).
+    
     Scenarios:
     - Spot ±2%, ±5%
-    - IV ±5 points
+    - IV(flat) ±5 points
     - Combined: spot -5% with IV +5pts (panic)
     """
-    max_loss_dollars = (structure.max_loss or 0) * 100
     entry_value = (structure.entry_credit or 0) * 100  # For credit
     if structure.entry_debit:
         entry_value = -(structure.entry_debit * 100)  # For debit
     
     scenarios = {}
     
-    # Define stress points
+    # Spot stress only
     spot_moves = [
         ("spot_+2%", 1.02),
         ("spot_-2%", 0.98),
@@ -357,28 +392,27 @@ def _calculate_stress_scenarios(
         ("spot_-5%", 0.95),
     ]
     
-    iv_shifts = [
-        ("iv_+5pts", 0.05),
-        ("iv_-5pts", -0.05),
-    ]
-    
-    # Spot stress only
     for name, mult in spot_moves:
         stressed_spot = spot * mult
         pnl = _estimate_structure_value(structure, stressed_spot, iv, t, r, q)
         scenarios[name] = pnl - entry_value
     
-    # IV stress only
+    # IV stress only (FLAT shift - same for all legs)
+    iv_shifts = [
+        ("iv(flat)_+5pts", 0.05),
+        ("iv(flat)_-5pts", -0.05),
+    ]
+    
     for name, shift in iv_shifts:
         stressed_iv = max(0.01, iv + shift)
         pnl = _estimate_structure_value(structure, spot, stressed_iv, t, r, q)
         scenarios[name] = pnl - entry_value
     
-    # Combined panic: spot -5%, IV +5pts
+    # Combined panic: spot -5%, IV(flat) +5pts
     panic_spot = spot * 0.95
     panic_iv = iv + 0.05
     pnl = _estimate_structure_value(structure, panic_spot, panic_iv, t, r, q)
-    scenarios["panic_spot-5%_iv+5pts"] = pnl - entry_value
+    scenarios["panic_spot-5%_iv(flat)+5pts"] = pnl - entry_value
     
     return scenarios
 
@@ -391,7 +425,7 @@ def _estimate_structure_value(
     r: float,
     q: float,
 ) -> float:
-    """Estimate structure value at given spot/IV."""
+    """Estimate structure value at given spot/IV (flat IV for all legs)."""
     from structures.pricing import bs_price, OptionSide
     
     total = 0
@@ -416,33 +450,34 @@ def format_probability_metrics(metrics: ProbabilityMetrics) -> str:
     
     # Core probabilities
     lines.append("**Core Probabilities:**")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
     lines.append(f"| Model PoP (expiration) | {metrics.pop_expiry:.1%} |")
-    lines.append(f"| P(Short Strike OTM) | {metrics.p_otm_short_strike:.1%} |")
+    lines.append(f"| P(Inside Short Strikes) | {metrics.p_inside_short_strikes:.1%} |")
+    lines.append(f"| P(Between Breakevens) | {metrics.p_between_breakevens:.1%} |")
     lines.append(f"| Breakeven Distance | {metrics.breakeven_distance_pct:.1f}% from spot |")
     lines.append("")
     
     # Expected value
-    lines.append("**Expected Value (Binary Approximation):**")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
-    lines.append(f"| EV at Expiration | ${metrics.expected_pnl_expiry:+.0f} |")
-    lines.append(f"| EV per $1 Risk | ${metrics.ev_per_dollar_risk:.3f} |")
+    lines.append("**Expected Value (Binary Approximation - NOT for ranking):**")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
+    lines.append(f"| EV at Expiration | ${metrics.expected_pnl_expiry_binary:+.0f} |")
+    lines.append(f"| EV per $1 Risk | ${metrics.ev_per_dollar_risk_binary:.3f} |")
     lines.append("")
     
     # Honesty metrics
-    lines.append("**Honesty Metrics (keep you honest):**")
-    lines.append(f"| Metric | Value |")
-    lines.append(f"|--------|-------|")
+    lines.append("**Honesty Metrics:**")
+    lines.append("| Metric | Value |")
+    lines.append("|--------|-------|")
     lines.append(f"| Credit / Width | {metrics.credit_to_width_ratio:.1%} |")
     lines.append(f"| Reward / Risk | {metrics.reward_to_risk_ratio:.2f}:1 |")
     lines.append("")
     
     # Stress scenarios
-    lines.append("**Stress Scenarios (PnL change):**")
-    lines.append(f"| Scenario | PnL |")
-    lines.append(f"|----------|-----|")
+    lines.append("**Stress Scenarios (flat IV shift):**")
+    lines.append("| Scenario | PnL |")
+    lines.append("|----------|-----|")
     for scenario, pnl in sorted(metrics.stress_scenarios.items()):
         lines.append(f"| {scenario} | ${pnl:+.0f} |")
     lines.append("")
@@ -452,9 +487,7 @@ def format_probability_metrics(metrics: ProbabilityMetrics) -> str:
     a = metrics.assumptions
     lines.append(f"- Spot: ${a.get('spot', 0):,.2f}")
     lines.append(f"- IV: {a.get('iv', 0):.1%}")
-    lines.append(f"- Time to Expiry: {a.get('time_to_expiry_days', 0):.0f} days")
-    lines.append(f"- Risk-Free Rate: {a.get('risk_free_rate', 0):.2%}")
-    lines.append(f"- Dividend Yield: {a.get('dividend_yield', 0):.2%}")
-    lines.append(f"- As-Of Date: {a.get('as_of', 'N/A')}")
+    lines.append(f"- Time: {a.get('time_to_expiry_days', 0):.0f} days")
+    lines.append(f"- Rate: {a.get('risk_free_rate', 0):.2%}")
     
     return "\n".join(lines)
