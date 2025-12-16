@@ -660,11 +660,11 @@ def render_trade_ticket(candidate: dict):
     with col2:
         st.markdown('<div style="color: #94a3b8; font-size: 11px; margin-bottom: 8px;">EXECUTION METRICS</div>', unsafe_allow_html=True)
         
-        # Show execution metrics
+        # Show execution metrics - DETERMINISTIC ONLY
         credit = structure.get('entry_credit_dollars', 0)
         debit = structure.get('entry_debit_dollars', 0)
         max_loss = structure.get('max_loss_dollars', 0)
-        pop = candidate.get('probability_metrics', {}).get('pop_expiry', 0) if candidate.get('probability_metrics') else 0
+        max_profit = structure.get('max_profit_dollars', 0)
         
         m1, m2 = st.columns(2)
         if credit > 0:
@@ -674,22 +674,103 @@ def render_trade_ticket(candidate: dict):
         m2.metric("📉 Max Loss", f"${max_loss:.0f}" if max_loss else "N/A")
         
         m3, m4 = st.columns(2)
-        m3.metric("📊 P(Profit)", f"{pop:.0%}" if pop else "N/A")
+        m3.metric("📈 Max Profit", f"${max_profit:.0f}" if max_profit else "N/A")
         m4.metric("📋 Mode", "PAPER")
-        
-        st.markdown('<div style="margin-top: 8px;"></div>', unsafe_allow_html=True)
-        rationale = edge.get('rationale', 'Edge detected via volatility surface analysis.')
-        if is_fallback:
-            rationale = "⚠️ FALLBACK: " + rationale
-        st.info(rationale[:100])
         
     st.markdown("</div></div>", unsafe_allow_html=True)
     
-    # --- PROBABILITY SNAPSHOT (Model-Based) ---
-    render_probability_snapshot(candidate)
+    # --- PAYOFF SUMMARY (STATIC / DETERMINISTIC) ---
+    st.markdown("""
+    <div style="background: rgba(30,41,59,0.6); border: 1px solid rgba(71,85,105,0.5); border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+        <div style="color: #94a3b8; font-weight: bold; font-size: 11px; margin-bottom: 8px;">
+            📊 PAYOFF SUMMARY (Deterministic)
+        </div>
+    """, unsafe_allow_html=True)
+    
+    # Calculate breakeven
+    legs = structure.get('legs', [])
+    if legs:
+        # For debit put spreads: breakeven = long_strike - debit_paid
+        # For credit put spreads: breakeven = short_strike - credit_received
+        long_strike = max([l.get('strike', 0) for l in legs if l.get('action') == 'BUY'], default=0)
+        short_strike = min([l.get('strike', 0) for l in legs if l.get('action') == 'SELL'], default=0)
+        
+        if debit > 0:
+            breakeven = long_strike - (debit / 100)  # Convert dollars to points
+        elif credit > 0:
+            breakeven = short_strike - (credit / 100)
+        else:
+            breakeven = 0
+    else:
+        breakeven = 0
+    
+    payoff_col1, payoff_col2, payoff_col3 = st.columns(3)
+    with payoff_col1:
+        st.markdown(f"""
+        <div style="text-align: center;">
+            <div style="color: #10b981; font-size: 20px; font-weight: bold;">${max_profit:.0f}</div>
+            <div style="color: #64748b; font-size: 10px;">MAX PROFIT</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with payoff_col2:
+        st.markdown(f"""
+        <div style="text-align: center;">
+            <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${max_loss:.0f}</div>
+            <div style="color: #64748b; font-size: 10px;">MAX LOSS</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with payoff_col3:
+        st.markdown(f"""
+        <div style="text-align: center;">
+            <div style="color: #f59e0b; font-size: 20px; font-weight: bold;">${breakeven:.2f}</div>
+            <div style="color: #64748b; font-size: 10px;">BREAKEVEN</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # --- PROVISIONAL EDGE STATUS ---
+    if is_fallback:
+        st.markdown("""
+        <div style="background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.3); border-radius: 4px; padding: 8px; margin-bottom: 12px;">
+            <span style="color: #ef4444; font-weight: bold; font-size: 11px;">⚠️ Provisional Edge (No historical percentile yet)</span>
+            <span style="color: #94a3b8; font-size: 10px; margin-left: 8px;" title="This signal is valid but not yet statistically calibrated.">
+                — Signal valid but not statistically calibrated
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # --- WHY THIS MAKES MONEY (One-liner) ---
+    edge_type = edge.get('type', '')
+    struct_type = structure.get('type', '')
+    
+    if edge_type == 'skew_extreme':
+        is_flat = edge.get('metrics', {}).get('is_flat', 0)
+        if is_flat:
+            why_money = "Skew normalization: profit if downside volatility reprices or price moves below breakeven before expiry."
+        else:
+            why_money = "Skew compression: profit if put premium decays without large downside move."
+    elif edge_type == 'vrp':
+        why_money = "Volatility risk premium: profit if realized volatility stays below implied volatility."
+    else:
+        why_money = "Edge expression: profit if market conditions normalize toward historical averages."
+    
+    st.markdown(f"""
+    <div style="background: rgba(56,189,248,0.06); border: 1px solid rgba(56,189,248,0.2); border-radius: 4px; padding: 10px; margin-bottom: 12px;">
+        <div style="color: #38bdf8; font-weight: bold; font-size: 11px; margin-bottom: 4px;">💡 WHY THIS MAKES MONEY</div>
+        <div style="color: #cbd5e1; font-size: 12px;">{why_money}</div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # --- EDGE RATIONALE (WHY THIS TRADE) ---
     render_edge_rationale(candidate)
+    
+    # --- CONFIRM REALNESS FOOTER ---
+    st.markdown("""
+    <div style="color: #64748b; font-size: 10px; font-style: italic; margin-bottom: 12px; padding: 4px 0; border-top: 1px solid rgba(71,85,105,0.3);">
+        ✓ Contracts, prices, and strikes sourced live from Polygon. Structure executable at IBKR.
+    </div>
+    """, unsafe_allow_html=True)
     
     # --- CONFIRMATION FLOW ---
     if 'order_states' not in st.session_state:
