@@ -581,6 +581,77 @@ def render_trade_ticket(candidate: dict):
         </div>
         """, unsafe_allow_html=True)
     
+    # --- PLAIN ENGLISH SUMMARY (TOP OF CARD) ---
+    # Get key values for summary
+    struct_type = structure.get('type', '')
+    max_profit = structure.get('max_profit_dollars', 0)
+    max_loss = structure.get('max_loss_dollars', 0)
+    debit = structure.get('entry_debit_dollars', 0)
+    credit = structure.get('entry_credit_dollars', 0)
+    legs = structure.get('legs', [])
+    
+    # Calculate max_profit fallback
+    if max_profit == 0 and struct_type in ['debit_spread', 'DEBIT_SPREAD'] and legs:
+        strikes = [l.get('strike', 0) for l in legs]
+        if len(strikes) >= 2:
+            width = abs(max(strikes) - min(strikes))
+            max_profit = (width - debit/100) * 100
+    
+    # Build plain English description
+    if struct_type in ['debit_spread', 'DEBIT_SPREAD']:
+        trade_type = "PUT SPREAD (BEARISH)"
+        action_word = "Pay"
+        cost_value = debit
+        simple_explain = f"You pay ${debit:.0f} upfront. You make money if {symbol} goes DOWN."
+    else:
+        trade_type = "PUT SPREAD (NEUTRAL)"
+        action_word = "Collect"
+        cost_value = credit
+        simple_explain = f"You collect ${credit:.0f} upfront. You keep it if {symbol} stays flat or goes UP."
+    
+    # Get expiration in readable format
+    exp = structure.get('expiration', '')
+    dte = structure.get('dte', 0)
+    
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(56,189,248,0.08)); border: 2px solid rgba(16,185,129,0.4); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="font-size: 24px; font-weight: bold; color: #f8fafc;">
+                {symbol} {trade_type}
+            </div>
+            <div style="background: rgba(16,185,129,0.2); border: 1px solid #10b981; color: #10b981; padding: 4px 12px; border-radius: 4px; font-weight: bold;">
+                READY TO TRADE
+            </div>
+        </div>
+        
+        <div style="font-size: 16px; color: #cbd5e1; margin-bottom: 16px;">
+            {simple_explain}
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center;">
+            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
+                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Your Cost</div>
+                <div style="color: #f59e0b; font-size: 24px; font-weight: bold;">${cost_value:.0f}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
+                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Max You Can Make</div>
+                <div style="color: #10b981; font-size: 24px; font-weight: bold;">${max_profit:.0f}</div>
+            </div>
+            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
+                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Max You Can Lose</div>
+                <div style="color: #ef4444; font-size: 24px; font-weight: bold;">${max_loss:.0f}</div>
+            </div>
+        </div>
+        
+        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
+            <span style="color: #64748b; font-size: 11px;">EXPIRES:</span>
+            <span style="color: #f8fafc; font-size: 12px; margin-left: 4px;">{exp} ({dte} days)</span>
+            <span style="color: #64748b; font-size: 11px; margin-left: 16px;">RETURN POTENTIAL:</span>
+            <span style="color: #10b981; font-size: 12px; margin-left: 4px;">{((max_profit/max_loss)*100) if max_loss > 0 else 0:.0f}% ({max_profit/cost_value if cost_value > 0 else 0:.1f}x)</span>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
     st.markdown('<div class="trade-body">', unsafe_allow_html=True)
     
     # --- RISK LADDER SELECTION ---
