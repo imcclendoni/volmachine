@@ -188,6 +188,9 @@ def detect_skew_edge(
     """
     Detect skew edge.
     
+    ONLY emits when skew is at EXTREME percentiles (>=90 or <=10).
+    Does NOT emit for "normal" ~50th percentile readings.
+    
     Edges:
     - Extreme steep skew: Puts very expensive, calls cheap
       -> Opportunity to sell put spreads or buy call spreads
@@ -201,27 +204,36 @@ def detect_skew_edge(
         config: Configuration
         
     Returns:
-        EdgeSignal if edge detected
+        EdgeSignal if edge detected (ONLY at extremes)
     """
     if config is None:
         config = SkewConfig()
     
     current_skew = metrics.put_call_skew
     
-    # Calculate percentile if we have history
-    percentile = 50.0
-    if skew_history and len(skew_history) >= config.lookback_days:
-        recent = skew_history[-config.lookback_days:]
-        percentile = sum(1 for s in recent if s < current_skew) / len(recent) * 100
+    # Calculate percentile - REQUIRED for signal generation
+    # Without sufficient history, we cannot determine if skew is extreme
+    if skew_history is None or len(skew_history) < 10:
+        # Not enough history - cannot emit edge
+        # This prevents false signals on first runs
+        return None
+    
+    recent = skew_history[-config.lookback_days:] if len(skew_history) >= config.lookback_days else skew_history
+    percentile = sum(1 for s in recent if s < current_skew) / len(recent) * 100
     
     # Check for extreme steep skew (high fear premium in puts)
-    if percentile >= config.percentile_extreme_high or current_skew >= config.skew_extreme_steep:
+    # ONLY emit if percentile is truly extreme (>= extreme_high)
+    if percentile >= config.percentile_extreme_high:
         # Puts very expensive vs calls
         # In panic, this is expected - lower signal strength
         if regime == RegimeState.HIGH_VOL_PANIC:
             strength = 0.4
         else:
-            strength = 0.7 + (percentile - config.percentile_extreme_high) / 50 * 0.3
+            # Scale strength from 0.6 to 1.0 based on how extreme
+            strength = 0.6 + (percentile - config.percentile_extreme_high) / 20 * 0.4
+        
+        # CLAMP strength to [0, 1]
+        strength = max(0.0, min(1.0, strength))
         
         rationale = (
             f"Steep put skew: 25d put IV ({metrics.put_iv_25d:.1%}) vs "
@@ -233,7 +245,7 @@ def detect_skew_edge(
             timestamp=datetime.now(),
             symbol="",
             edge_type=EdgeType.SKEW_EXTREME,
-            strength=min(strength, 1.0),
+            strength=strength,
             direction=TradeDirection.SHORT,  # Sell put premium
             metrics={
                 'put_iv_25d': round(metrics.put_iv_25d, 4),
@@ -248,11 +260,16 @@ def detect_skew_edge(
         )
     
     # Check for extreme flat skew (puts unusually cheap)
-    if percentile <= config.percentile_extreme_low or current_skew <= config.skew_extreme_flat:
+    # ONLY emit if percentile is truly extreme (<= extreme_low)
+    if percentile <= config.percentile_extreme_low:
         # Puts unusually cheap - tail protection is affordable
         # This is unusual and worth noting
         
+        # Scale strength from 0.5 to 0.8 based on how extreme
         strength = 0.5 + (config.percentile_extreme_low - percentile) / 20 * 0.3
+        
+        # CLAMP strength to [0, 1]
+        strength = max(0.0, min(1.0, strength))
         
         rationale = (
             f"Flat put skew: 25d put IV ({metrics.put_iv_25d:.1%}) vs "
@@ -265,7 +282,7 @@ def detect_skew_edge(
             timestamp=datetime.now(),
             symbol="",
             edge_type=EdgeType.SKEW_EXTREME,
-            strength=min(strength, 1.0),
+            strength=strength,
             direction=TradeDirection.LONG,  # Buy put protection
             metrics={
                 'put_iv_25d': round(metrics.put_iv_25d, 4),
@@ -279,6 +296,7 @@ def detect_skew_edge(
             regime_at_signal=regime,
         )
     
+    # Percentile is in normal range (10-90) - NO EDGE
     return None
 
 

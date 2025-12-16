@@ -567,13 +567,15 @@ class VolMachineEngine:
         spot = option_chain.underlying_price
         atm_strike = round(spot)
         
-        # Calculate max allowable risk based on per-trade risk cap
+        # Calculate max allowable risk for sizing later (NOT for width selection)
         max_risk_dollars = self.sizing_config.account_equity * self.sizing_config.max_risk_per_trade_pct / 100
-        max_width_for_risk = int(max_risk_dollars / 100)  # 100 = multiplier
         
-        # Try widths from configured down to 1
+        # FIX: Width is NOT the same as max loss!
+        # A $5 wide spread can have max loss < $500 if we receive credit.
+        # Try widths from preferred_width_points down to min_width_points.
+        # Let the structure builder and sizing logic determine if the result fits risk cap.
         widths_to_try = list(range(
-            min(self.builder_config.preferred_width_points, max_width_for_risk),
+            self.builder_config.preferred_width_points,
             self.builder_config.min_width_points - 1,
             -1
         ))
