@@ -198,16 +198,30 @@ class VolMachineEngine:
             iv_shift_points=stress_config.get('iv_shift_points', 5),
         )
         
-        # Builder config
+        # Builder config - parse nested YAML structure
         structure_config = self.config.get('structures', {})
+        liquidity = structure_config.get('liquidity', {})
+        expiry = structure_config.get('expiry', {})
+        strikes = structure_config.get('strikes', {})
+        
+        # Handle preferred_dte which can be list or int
+        preferred_dte = expiry.get('preferred_dte', [30])
+        target_dte = preferred_dte[0] if isinstance(preferred_dte, list) and preferred_dte else (preferred_dte if isinstance(preferred_dte, int) else 30)
+        
         self.builder_config = BuilderConfig(
-            preferred_width_points=structure_config.get('preferred_width', 5),
-            min_width_points=structure_config.get('min_width', 1),
-            max_width_points=structure_config.get('max_width', 20),
-            min_dte=structure_config.get('min_dte', 7),
-            max_dte=structure_config.get('max_dte', 60),
-            target_dte=structure_config.get('target_dte', 30),
+            # Liquidity settings
+            min_volume=liquidity.get('min_volume', 100),
+            min_open_interest=liquidity.get('min_open_interest', 500),
+            max_bid_ask_pct=liquidity.get('max_bid_ask_width_pct', 5.0),
             enforce_liquidity=structure_config.get('enforce_liquidity', True),
+            # Expiry settings
+            min_dte=expiry.get('min_dte', 7),
+            max_dte=expiry.get('max_dte', 60),
+            target_dte=target_dte,
+            # Strike width settings
+            preferred_width_points=strikes.get('preferred_width', 5),
+            min_width_points=strikes.get('min_width', 1),
+            max_width_points=strikes.get('max_width', 20),
         )
     
     def get_enabled_symbols(self) -> list[str]:
@@ -217,6 +231,31 @@ class VolMachineEngine:
             if cfg.get('enabled', True):
                 symbols.append(sym)
         return symbols
+    
+    def _get_symbol_config(self, symbol: str) -> BuilderConfig:
+        """
+        Build effective BuilderConfig by merging global + per-symbol overrides.
+        
+        Per-symbol values in universe.yaml override global settings.yaml values.
+        """
+        sym_cfg = self.universe.get('symbols', {}).get(symbol, {})
+        
+        # Start with global config values, overlay per-symbol overrides
+        return BuilderConfig(
+            # Liquidity - per-symbol can override
+            min_volume=sym_cfg.get('min_volume', self.builder_config.min_volume),
+            min_open_interest=sym_cfg.get('min_open_interest', self.builder_config.min_open_interest),
+            max_bid_ask_pct=sym_cfg.get('max_bid_ask_pct', self.builder_config.max_bid_ask_pct),
+            enforce_liquidity=self.builder_config.enforce_liquidity,
+            # Expiry - per-symbol can override min/max DTE
+            min_dte=sym_cfg.get('min_dte', self.builder_config.min_dte),
+            max_dte=sym_cfg.get('max_dte', self.builder_config.max_dte),
+            target_dte=self.builder_config.target_dte,
+            # Width - keep global for now
+            preferred_width_points=self.builder_config.preferred_width_points,
+            min_width_points=self.builder_config.min_width_points,
+            max_width_points=self.builder_config.max_width_points,
+        )
     
     def connect(self) -> bool:
         """Connect to data provider."""
@@ -366,6 +405,9 @@ class VolMachineEngine:
         option_chain = None
         
         try:
+            # Get per-symbol config (merges global + universe overrides)
+            sym_config = self._get_symbol_config(symbol)
+            
             # Get data using run_date as reference
             end_date = self._run_date
             start_date = end_date - timedelta(days=300)
@@ -373,8 +415,8 @@ class VolMachineEngine:
             ohlcv = self.provider.get_historical_ohlcv(symbol, start_date, end_date)
             option_chain = self.provider.get_option_chain(
                 symbol,
-                min_dte=self.builder_config.min_dte,
-                max_dte=self.builder_config.max_dte
+                min_dte=sym_config.min_dte,
+                max_dte=sym_config.max_dte
             )
             
             # Run all detectors

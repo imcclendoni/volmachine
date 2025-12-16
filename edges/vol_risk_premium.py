@@ -67,7 +67,8 @@ class VRPMetrics:
 
 def calculate_atm_iv(
     option_chain: OptionChain,
-    target_dte: int = 30
+    target_dte: int = 30,
+    as_of_date: Optional[date] = None,
 ) -> Optional[float]:
     """
     Calculate ATM implied volatility.
@@ -78,18 +79,19 @@ def calculate_atm_iv(
     Args:
         option_chain: Full option chain
         target_dte: Target days to expiration
+        as_of_date: Reference date for DTE calculation (default: today)
         
     Returns:
         ATM IV or None if unavailable
     """
-    today = date.today()
+    ref_date = as_of_date or date.today()
     
     # Find nearest expiration to target DTE
     best_exp = None
     best_dte_diff = float('inf')
     
     for exp in option_chain.expirations:
-        dte = (exp - today).days
+        dte = (exp - ref_date).days
         if dte > 0 and abs(dte - target_dte) < best_dte_diff:
             best_dte_diff = abs(dte - target_dte)
             best_exp = exp
@@ -297,10 +299,14 @@ def detect_vrp_edge(
 class VRPDetector:
     """Volatility Risk Premium edge detector."""
     
-    def __init__(self, config: Optional[VRPConfig] = None):
+    def __init__(self, config: Optional[VRPConfig] = None, cache_dir: str = './cache'):
         self.config = config or VRPConfig()
+        self.cache_dir = cache_dir
         self._iv_history: dict[str, pd.Series] = {}
         self._rv_history: dict[str, pd.Series] = {}
+        
+        # Load persisted history on init
+        self._load_histories()
     
     def detect(
         self,
@@ -308,6 +314,7 @@ class VRPDetector:
         option_chain: OptionChain,
         ohlcv_history: list[OHLCV],
         regime: RegimeState,
+        as_of_date: Optional[date] = None,
     ) -> Optional[EdgeSignal]:
         """
         Detect VRP edge for a symbol.
@@ -317,6 +324,7 @@ class VRPDetector:
             option_chain: Current option chain
             ohlcv_history: Price history
             regime: Current market regime
+            as_of_date: Reference date for calculations
             
         Returns:
             EdgeSignal if edge detected
@@ -331,7 +339,7 @@ class VRPDetector:
             )
             
             # Update histories
-            self._update_histories(symbol, metrics)
+            self._update_histories(symbol, metrics, as_of_date)
             
             signal = detect_vrp_edge(metrics, regime, self.config)
             
@@ -345,20 +353,76 @@ class VRPDetector:
             print(f"VRP detection error for {symbol}: {e}")
             return None
     
-    def _update_histories(self, symbol: str, metrics: VRPMetrics):
+    def _update_histories(self, symbol: str, metrics: VRPMetrics, as_of_date: Optional[date] = None):
         """Update historical IV and RV series."""
         if symbol not in self._iv_history:
             self._iv_history[symbol] = pd.Series(dtype=float)
         if symbol not in self._rv_history:
             self._rv_history[symbol] = pd.Series(dtype=float)
         
-        # Append today's values
-        today = date.today()
-        self._iv_history[symbol][today] = metrics.atm_iv
-        self._rv_history[symbol][today] = metrics.rv_20d
+        # Use as_of_date or today
+        ref_date = as_of_date or date.today()
+        self._iv_history[symbol][ref_date] = metrics.atm_iv
+        self._rv_history[symbol][ref_date] = metrics.rv_20d
         
         # Keep bounded
         if len(self._iv_history[symbol]) > 500:
             self._iv_history[symbol] = self._iv_history[symbol].iloc[-500:]
         if len(self._rv_history[symbol]) > 500:
+            self._rv_history[symbol] = self._rv_history[symbol].iloc[-500:]
+        
+        # Persist after update
+        self._save_histories()
+    
+    def _save_histories(self):
+        """Save IV/RV histories to cache directory."""
+        import os
+        import json
+        
+        os.makedirs(self.cache_dir, exist_ok=True)
+        cache_file = os.path.join(self.cache_dir, 'vrp_histories.json')
+        
+        data = {
+            'iv_history': {
+                sym: {str(k): v for k, v in series.items()}
+                for sym, series in self._iv_history.items()
+            },
+            'rv_history': {
+                sym: {str(k): v for k, v in series.items()}
+                for sym, series in self._rv_history.items()
+            },
+        }
+        
+        try:
+            with open(cache_file, 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            print(f"Warning: Could not save VRP histories: {e}")
+    
+    def _load_histories(self):
+        """Load IV/RV histories from cache directory."""
+        import os
+        import json
+        
+        cache_file = os.path.join(self.cache_dir, 'vrp_histories.json')
+        
+        if not os.path.exists(cache_file):
+            return
+        
+        try:
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+            
+            for sym, series_data in data.get('iv_history', {}).items():
+                self._iv_history[sym] = pd.Series({
+                    date.fromisoformat(k): v for k, v in series_data.items()
+                })
+            
+            for sym, series_data in data.get('rv_history', {}).items():
+                self._rv_history[sym] = pd.Series({
+                    date.fromisoformat(k): v for k, v in series_data.items()
+                })
+        except Exception as e:
+            print(f"Warning: Could not load VRP histories: {e}")
+
             self._rv_history[symbol] = self._rv_history[symbol].iloc[-500:]
