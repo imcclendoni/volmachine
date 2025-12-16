@@ -136,8 +136,14 @@ class LimitTracker:
         warnings = []
         
         # Calculate metrics
-        daily_loss_pct = -self.get_daily_pnl(today) / self.config.account_equity * 100
-        weekly_loss_pct = -self.get_weekly_pnl(today) / self.config.account_equity * 100
+        # NOTE: For real desks, this should eventually use rolling equity (self._current_equity)
+        # instead of static starting equity. Using static for now for paper trading simplicity.
+        # TODO: Add config option to use rolling vs static equity
+        base_equity = self.config.account_equity  # Static for now
+        # base_equity = self._current_equity  # Rolling (for production)
+        
+        daily_loss_pct = -self.get_daily_pnl(today) / base_equity * 100
+        weekly_loss_pct = -self.get_weekly_pnl(today) / base_equity * 100
         drawdown_pct = -self.get_drawdown()  # Make positive for loss
         
         trading_allowed = True

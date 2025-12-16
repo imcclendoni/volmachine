@@ -41,6 +41,10 @@ class ValidationConfig:
     min_open_interest: int = 100
     max_bid_ask_pct: float = 10.0  # 10% max spread
     
+    # CRITICAL: If True, liquidity failure = FAIL (not warn)
+    # Otherwise report may say TRADE but builder would never fill live
+    enforce_liquidity: bool = True
+    
     # Risk requirements
     max_loss_required: bool = True  # Must have defined max loss
     max_loss_cap: float = 10000  # Max loss per contract cap
@@ -296,9 +300,13 @@ def validate_structure(
     all_messages.extend(dr_messages)
     
     # Liquidity check
+    # CRITICAL: If enforce_liquidity=True, liquidity failure = FAIL (not warn)
+    # Otherwise report may say TRADE but builder would never fill live
     passes_liquidity, liq_messages = validate_liquidity(structure, config)
-    if liq_messages:
-        warnings.extend(liq_messages)  # Liquidity is a warning, not failure
+    if config.enforce_liquidity and liq_messages:
+        all_messages.extend(liq_messages)  # Hard failure
+    elif liq_messages:
+        warnings.extend(liq_messages)  # Soft warning only
     
     # Margin check
     passes_margin, margin_messages = validate_margin(structure, account_equity, config=config)
@@ -309,7 +317,9 @@ def validate_structure(
     all_messages.extend(sanity_messages)
     
     # Overall validity
-    is_valid = is_defined_risk and passes_margin and passes_sanity
+    # Include liquidity in validity check when enforced
+    liquidity_ok = passes_liquidity or not config.enforce_liquidity
+    is_valid = is_defined_risk and passes_margin and passes_sanity and liquidity_ok
     
     return ValidationResult(
         is_valid=is_valid,
