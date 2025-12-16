@@ -32,6 +32,10 @@ class ProbabilityMetrics:
     
     All probabilities are model-derived under lognormal assumptions.
     NOT predictive of actual outcomes - use for relative comparison only.
+    
+    IMPORTANT: breakevens must be computed using the same pricing assumption
+    as max_loss (conservative bid/ask). builders.py uses conservative_credit_points
+    for breakeven calculation, ensuring PoP is "honest."
     """
     
     # Core probabilities
@@ -56,7 +60,8 @@ class ProbabilityMetrics:
     stress_scenarios: Dict[str, float]  # scenario -> PnL
     
     # Assumptions used (for transparency)
-    assumptions: Dict[str, float]
+    # Using object type to allow str, float, int values
+    assumptions: Dict[str, object]
     
     # Warning
     warning: str = (
