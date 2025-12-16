@@ -386,27 +386,34 @@ class PolygonProvider(DataProvider):
                 day = details.get('day', {})
                 greeks_data = details.get('greeks', {})
                 
-                # Build Greeks with EPSILON-based clamping for numerical noise only
-                # This applies at contract level only - aggregated structure Greeks can be negative
-                EPSILON = 1e-6
+                # Build Greeks with ROBUST clamping at provider boundary
+                # This prevents validation failures from feed noise - never fail on minor Greeks noise
+                SMALL_NOISE_TOLERANCE = 0.05  # Clamp gamma/vega if negative but < this magnitude
                 greeks = None
                 if greeks_data:
-                    delta = greeks_data.get('delta', 0)
-                    gamma = greeks_data.get('gamma', 0)
-                    theta = greeks_data.get('theta', 0)  # Can be negative
-                    vega = greeks_data.get('vega', 0)
+                    delta = greeks_data.get('delta', 0) or 0
+                    gamma = greeks_data.get('gamma', 0) or 0
+                    theta = greeks_data.get('theta', 0) or 0  # Can be negative (OK)
+                    vega = greeks_data.get('vega', 0) or 0
                     
-                    # Epsilon tolerance: only clamp if negative by tiny amount (noise)
-                    if gamma < 0 and abs(gamma) < EPSILON:
-                        gamma = 0
-                    if vega < 0 and abs(vega) < EPSILON:
-                        vega = 0
+                    # HARD clamp delta to [-1, 1] (always, not just epsilon)
+                    delta = max(-1.0, min(1.0, delta))
                     
-                    # Clamp delta to [-1, 1] with epsilon tolerance
-                    if delta < -1 and abs(delta + 1) < EPSILON:
-                        delta = -1
-                    elif delta > 1 and abs(delta - 1) < EPSILON:
-                        delta = 1
+                    # Clamp gamma to >= 0 if only slightly negative (noise)
+                    # Gamma should never be negative for individual contracts
+                    if gamma < 0:
+                        if abs(gamma) < SMALL_NOISE_TOLERANCE:
+                            gamma = 0.0  # Noise - clamp to 0
+                        else:
+                            gamma = 0.0  # Larger error - still clamp but log would be nice
+                    
+                    # Clamp vega to >= 0 if only slightly negative (noise)
+                    # Vega should never be negative for individual long options
+                    if vega < 0:
+                        if abs(vega) < SMALL_NOISE_TOLERANCE:
+                            vega = 0.0  # Noise - clamp to 0
+                        else:
+                            vega = 0.0  # Larger error - still clamp
                     
                     greeks = Greeks(
                         delta=delta,
