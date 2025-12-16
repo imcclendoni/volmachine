@@ -1,6 +1,12 @@
 ---
 # Options Volatility Trading Engine - Universe Configuration
 # ===========================================================
+# 
+# DIVERSIFICATION PHILOSOPHY:
+# - Big money wins with BREADTH
+# - Run same engine on 30 liquid underlyings
+# - Apply strict liquidity and risk caps per symbol
+# - Let opportunity set increase naturally
 
 # Default settings applied to all symbols
 defaults:
@@ -18,77 +24,361 @@ defaults:
     - iron_condor
     - butterfly
     - calendar
-    - diagonal
 
-# Asset Universe
+# ============================================================================
+# TIER 1: FLAGSHIP ETFs (Most Liquid - Tighter Filters)
+# ============================================================================
 symbols:
-  # ETFs - Primary Focus
   SPY:
     name: "S&P 500 ETF"
     type: "etf"
+    tier: 1
     enabled: true
-    # Override defaults for SPY (most liquid)
-    min_volume: 500
-    min_open_interest: 2000
-    max_bid_ask_pct: 2.0
-    # Preferred expiration cycles
-    expiry_preference: ["monthly", "weekly"]
-    # VIX correlation proxy
+    min_volume: 1000
+    min_open_interest: 5000
+    max_bid_ask_pct: 1.5
+    expiry_preference: ["weekly", "monthly"]
     vol_index: "VIX"
+    dividend_yield: 0.013
     
   QQQ:
     name: "Nasdaq 100 ETF"
     type: "etf"
+    tier: 1
     enabled: true
-    min_volume: 300
-    min_open_interest: 1000
-    max_bid_ask_pct: 3.0
-    expiry_preference: ["monthly", "weekly"]
-    vol_index: "VXN"  # If available
+    min_volume: 500
+    min_open_interest: 2000
+    max_bid_ask_pct: 2.0
+    expiry_preference: ["weekly", "monthly"]
+    vol_index: "VXN"
+    dividend_yield: 0.005
     
   IWM:
     name: "Russell 2000 ETF"
     type: "etf"
-    enabled: false  # Disabled for MV1
-    min_volume: 200
-    min_open_interest: 500
-    expiry_preference: ["monthly"]
-    vol_index: "RVX"  # If available
+    tier: 1
+    enabled: true
+    min_volume: 300
+    min_open_interest: 1500
+    max_bid_ask_pct: 2.5
+    expiry_preference: ["monthly", "weekly"]
+    vol_index: "RVX"
+    dividend_yield: 0.011
 
-  # Individual Equities - Optional for later
+# ============================================================================
+# TIER 2: SECTOR ETFs (Good Liquidity)
+# ============================================================================
+  XLF:
+    name: "Financial Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    expiry_preference: ["monthly"]
+    dividend_yield: 0.016
+    
+  XLE:
+    name: "Energy Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.035
+    
+  XLK:
+    name: "Technology Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.007
+    
+  XLV:
+    name: "Health Care Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 800
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.014
+    
+  XLI:
+    name: "Industrial Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 150
+    min_open_interest: 800
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.012
+    
+  XLU:
+    name: "Utilities Select Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 100
+    min_open_interest: 500
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.027
+    
+  XLP:
+    name: "Consumer Staples Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 100
+    min_open_interest: 500
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.024
+    
+  XLY:
+    name: "Consumer Discretionary Sector"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 150
+    min_open_interest: 800
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.009
+
+# ============================================================================
+# TIER 2: OTHER LIQUID ETFs
+# ============================================================================
+  EEM:
+    name: "Emerging Markets ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 300
+    min_open_interest: 1500
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.025
+    
+  EFA:
+    name: "International Developed ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.028
+    
+  GLD:
+    name: "Gold ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.0
+    
+  SLV:
+    name: "Silver ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 150
+    min_open_interest: 800
+    max_bid_ask_pct: 4.0
+    dividend_yield: 0.0
+    
+  TLT:
+    name: "20+ Year Treasury ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 300
+    min_open_interest: 1500
+    max_bid_ask_pct: 2.5
+    dividend_yield: 0.035
+    
+  HYG:
+    name: "High Yield Bond ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.055
+    
+  USO:
+    name: "Crude Oil ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 4.0
+    dividend_yield: 0.0
+    
+  XBI:
+    name: "Biotech ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 800
+    max_bid_ask_pct: 4.0
+    dividend_yield: 0.002
+    
+  ARKK:
+    name: "ARK Innovation ETF"
+    type: "etf"
+    tier: 2
+    enabled: true
+    min_volume: 200
+    min_open_interest: 800
+    max_bid_ask_pct: 4.0
+    high_vol: true
+    dividend_yield: 0.0
+
+# ============================================================================
+# TIER 3: MEGA-CAP EQUITIES (Earnings Sensitive)
+# ============================================================================
   AAPL:
     name: "Apple Inc."
     type: "equity"
-    enabled: false  # Disabled for MV1
+    tier: 3
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
+    min_volume: 300
+    min_open_interest: 1500
+    max_bid_ask_pct: 2.5
+    dividend_yield: 0.005
     
   MSFT:
     name: "Microsoft Corp."
     type: "equity"
-    enabled: false
+    tier: 3
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
+    min_volume: 250
+    min_open_interest: 1200
+    max_bid_ask_pct: 2.5
+    dividend_yield: 0.007
+    
+  GOOGL:
+    name: "Alphabet Inc."
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "technology"
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.0
+    
+  AMZN:
+    name: "Amazon.com Inc."
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "technology"
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.0
+    
+  META:
+    name: "Meta Platforms Inc."
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "technology"
+    min_volume: 200
+    min_open_interest: 1000
+    max_bid_ask_pct: 3.0
+    dividend_yield: 0.004
     
   NVDA:
     name: "NVIDIA Corp."
     type: "equity"
-    enabled: false
+    tier: 3
+    enabled: true
     earnings_sensitive: true
     sector: "technology"
-    # High vol equity - special handling
-    min_dte: 14  # Give more time for high vol
-    structures_allowed:
-      - debit_spread
-      - butterfly
-      - calendar
+    high_vol: true
+    min_volume: 500
+    min_open_interest: 2000
+    max_bid_ask_pct: 3.0
+    min_dte: 14  # More time for high vol
+    dividend_yield: 0.0
+    
+  TSLA:
+    name: "Tesla Inc."
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "technology"
+    high_vol: true
+    min_volume: 500
+    min_open_interest: 2000
+    max_bid_ask_pct: 3.0
+    min_dte: 14
+    dividend_yield: 0.0
+    
+  AMD:
+    name: "Advanced Micro Devices"
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "technology"
+    high_vol: true
+    min_volume: 300
+    min_open_interest: 1500
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.0
+    
+  JPM:
+    name: "JPMorgan Chase"
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "financials"
+    min_volume: 150
+    min_open_interest: 800
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.022
+    
+  BAC:
+    name: "Bank of America"
+    type: "equity"
+    tier: 3
+    enabled: true
+    earnings_sensitive: true
+    sector: "financials"
+    min_volume: 150
+    min_open_interest: 800
+    max_bid_ask_pct: 3.5
+    dividend_yield: 0.024
 
+# ============================================================================
 # Volatility Index References
+# ============================================================================
 vol_indices:
   VIX:
     description: "CBOE Volatility Index (SPX)"
     underlying: "SPY"
-    data_source: "provider"  # or "csv" for manual input
+    data_source: "provider"
     
   VVIX:
     description: "VIX of VIX"
@@ -97,20 +387,35 @@ vol_indices:
   VXN:
     description: "CBOE Nasdaq Volatility"
     underlying: "QQQ"
-    data_source: "csv"  # Often need manual input
+    data_source: "provider"
+    
+  RVX:
+    description: "CBOE Russell 2000 Volatility"
+    underlying: "IWM"
+    data_source: "provider"
 
+# ============================================================================
 # Event Calendar Sources
+# ============================================================================
 events:
   earnings:
-    source: "csv"  # Manual CSV input
+    source: "csv"
     file: "./data/events/earnings_calendar.csv"
     
   economic:
     source: "csv"
     file: "./data/events/economic_calendar.csv"
-    # Key events to track
     tracked_events:
       - "FOMC"
       - "CPI"
       - "NFP"
       - "GDP"
+      - "PCE"
+
+# ============================================================================
+# Universe Summary
+# ============================================================================
+# Tier 1: SPY, QQQ, IWM (3)
+# Tier 2: XLF, XLE, XLK, XLV, XLI, XLU, XLP, XLY, EEM, EFA, GLD, SLV, TLT, HYG, USO, XBI, ARKK (17)
+# Tier 3: AAPL, MSFT, GOOGL, AMZN, META, NVDA, TSLA, AMD, JPM, BAC (10)
+# Total: 30 underlyings
