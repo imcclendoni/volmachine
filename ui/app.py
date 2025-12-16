@@ -525,6 +525,71 @@ def render_status_badges(candidate: dict, is_fallback: bool):
     st.markdown(badge_html, unsafe_allow_html=True)
 
 
+def render_trade_card(candidate: dict):
+    """
+    Render a compact trade card for grid display.
+    Shows key info in a contained card format.
+    """
+    symbol = candidate['symbol']
+    structure = candidate.get('structure') or {}
+    edge = candidate.get('edge') or {}
+    sizing = candidate.get('sizing') or {}
+    
+    struct_type = structure.get('type', '')
+    max_profit = structure.get('max_profit_dollars', 0)
+    max_loss = structure.get('max_loss_dollars', 0)
+    debit = structure.get('entry_debit_dollars', 0)
+    credit = structure.get('entry_credit_dollars', 0)
+    contracts = sizing.get('recommended_contracts', 0)
+    
+    # Calculate max_profit fallback
+    if max_profit == 0 and struct_type in ['debit_spread', 'DEBIT_SPREAD']:
+        legs = structure.get('legs', [])
+        if legs:
+            strikes = [l.get('strike', 0) for l in legs]
+            if len(strikes) >= 2:
+                width = abs(max(strikes) - min(strikes))
+                max_profit = (width - debit/100) * 100
+    
+    # Determine trade direction
+    if struct_type in ['debit_spread', 'DEBIT_SPREAD']:
+        direction = "📉 BEARISH"
+        cost = debit
+    else:
+        direction = "📈 NEUTRAL"
+        cost = credit
+    
+    exp = structure.get('expiration', '')
+    dte = structure.get('dte', 0)
+    return_mult = max_profit / cost if cost > 0 else 0
+    edge_type = edge.get('type', '').upper().replace('_', ' ')
+    is_fallback = edge.get('is_fallback', False) or edge.get('metrics', {}).get('history_mode', 1) == 0
+    
+    # Card container with border
+    with st.container():
+        st.markdown(f"""
+        <div style="border: 2px solid #10b981; border-radius: 12px; padding: 16px; background: linear-gradient(180deg, rgba(16,185,129,0.1), rgba(30,41,59,0.8));">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                <span style="font-size: 20px; font-weight: bold; color: #f8fafc;">{symbol}</span>
+                <span style="background: {'#ef4444' if is_fallback else '#10b981'}; color: white; padding: 2px 8px; border-radius: 4px; font-size: 10px;">{'FALLBACK' if is_fallback else 'CONFIRMED'}</span>
+            </div>
+            <div style="color: #94a3b8; font-size: 12px; margin-bottom: 12px;">{direction} PUT SPREAD</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Key metrics
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("💵 Cost", f"${cost:.0f}")
+            st.metric("📈 Max Profit", f"${max_profit:.0f}")
+        with col2:
+            st.metric("📉 Max Loss", f"${max_loss:.0f}")
+            st.metric("🎲 Return", f"{return_mult:.1f}x")
+        
+        # Footer info
+        st.caption(f"⏰ {dte} days | 📊 {contracts} contracts | 🏷️ {edge_type}")
+
+
 def render_trade_ticket(candidate: dict):
     """
     Render trade ticket with two-step execution flow.
@@ -1142,8 +1207,29 @@ def main():
     trades = [c for c in candidates if c.get('recommendation') == 'TRADE']
     
     if trades:
-        for t in trades:
-            render_trade_ticket(t)
+        st.markdown(f"**{len(trades)} Trade{'s' if len(trades) > 1 else ''} Available** — Compare and select:")
+        
+        # Create columns for cards (max 2 per row)
+        num_cols = min(len(trades), 2)
+        
+        for i in range(0, len(trades), num_cols):
+            cols = st.columns(num_cols)
+            for j, col in enumerate(cols):
+                if i + j < len(trades):
+                    trade = trades[i + j]
+                    with col:
+                        render_trade_card(trade)
+        
+        # Detailed view expander for selected trade
+        st.markdown("---")
+        st.markdown("**📋 Detailed Execution View:**")
+        selected_symbol = st.selectbox(
+            "Select trade for full details:",
+            [t['symbol'] for t in trades],
+            key="trade_detail_select"
+        )
+        selected_trade = next((t for t in trades if t['symbol'] == selected_symbol), trades[0])
+        render_trade_ticket(selected_trade)
     else:
         edges = report.get('edges', [])
         if edges:
