@@ -178,6 +178,8 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
             'recommended_contracts': candidate.recommended_contracts,
             'risk_per_contract_dollars': candidate.risk_per_contract,
             'total_risk_dollars': candidate.total_risk,
+            # What-if sizing at alternative risk levels (2%, 5%, 10%)
+            'what_if_sizes': getattr(candidate, 'what_if_sizes', None) or {},
         },
         
         # Edge info
