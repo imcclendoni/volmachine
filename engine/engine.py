@@ -614,12 +614,14 @@ class VolMachineEngine:
         from data.schemas import OptionStructure, StructureType
         from risk.sizing import SizingResult
         
-        # Create minimal structure placeholder
+        # Create minimal placeholder structure (not a real trade)
+        # is_placeholder=True bypasses validation requirements
         dummy_structure = OptionStructure(
             structure_type=StructureType.CREDIT_SPREAD,
             symbol=symbol,
             legs=[],
-            max_loss=0,
+            max_loss=None,  # None is valid for placeholders
+            is_placeholder=True,
         )
         
         dummy_sizing = SizingResult(
@@ -638,6 +640,7 @@ class VolMachineEngine:
             regime=regime,
             sizing=dummy_sizing,
             validation_messages=[reason],
+            include_explanations=False,  # No explanations for PASS
         )
     
     def export_report(

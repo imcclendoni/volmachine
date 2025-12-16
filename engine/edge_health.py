@@ -365,6 +365,9 @@ class EdgePerformanceTracker:
         if not window_outcomes:
             return None
         
+        # CRITICAL: Sort by exit_date for correct consecutive loss and drawdown computation
+        window_outcomes = sorted(window_outcomes, key=lambda x: x.exit_date or date.min)
+        
         pnls = [o.pnl_dollars for o in window_outcomes]
         risks = [o.max_loss_dollars for o in window_outcomes]
         
@@ -377,7 +380,7 @@ class EdgePerformanceTracker:
         variance = sum((p - avg_pnl) ** 2 for p in pnls) / len(pnls) if pnls else 0
         std_dev = variance ** 0.5
         
-        # Rolling drawdown
+        # Rolling drawdown (computed on chronologically sorted PnLs)
         cumulative = 0
         peak = 0
         max_dd = 0

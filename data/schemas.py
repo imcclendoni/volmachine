@@ -328,6 +328,9 @@ class OptionStructure(BaseModel):
     net_theta: float = 0
     net_vega: float = 0
     
+    # Placeholder flag for PASS candidates (skips validation)
+    is_placeholder: bool = False
+    
     # Margin estimate
     margin_requirement: Optional[float] = None
     
