@@ -161,7 +161,9 @@ def main():
             emoji = "✅" if c.recommendation == "TRADE" else "⚠️" if c.recommendation == "REVIEW" else "❌"
             print(f"{i}. {emoji} {c.symbol} - {c.structure.structure_type.value}")
             print(f"   Edge: {c.edge.edge_type.value} ({c.edge.strength:.0%})")
-            max_loss_str = f"${c.structure.max_loss:.2f}" if c.structure.max_loss else "N/A"
+            # IMPORTANT: Use max_loss_dollars not max_loss (points vs dollars)
+            max_loss_dollars = c.structure.max_loss_dollars if c.structure.max_loss_dollars else 0
+            max_loss_str = f"${max_loss_dollars:.2f}" if max_loss_dollars else "N/A"
             print(f"   Max Loss: {max_loss_str}, Contracts: {c.recommended_contracts}")
     
     # Save report
