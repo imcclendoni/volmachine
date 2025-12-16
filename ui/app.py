@@ -39,8 +39,9 @@ st.markdown("""
 .stApp {
     background: #050505;
     background-image: 
-        radial-gradient(circle at 50% 0%, rgba(0, 217, 255, 0.1) 0%, transparent 50%),
-        radial-gradient(circle at 100% 0%, rgba(124, 58, 237, 0.1) 0%, transparent 40%);
+        radial-gradient(circle at 50% 0%, rgba(0, 217, 255, 0.15) 0%, transparent 60%),
+        radial-gradient(circle at 100% 0%, rgba(124, 58, 237, 0.15) 0%, transparent 50%),
+        linear-gradient(0deg, rgba(0,0,0,0.2) 0%, transparent 100%);
     color: #e6e8eb;
 }
 
@@ -58,7 +59,7 @@ h1, h2, h3, .main-title {
     background: linear-gradient(90deg, #00f2ea 0%, #00d9ff 50%, #0066ff 100%);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
-    text-shadow: 0 0 30px rgba(0, 217, 255, 0.4);
+    text-shadow: 0 0 40px rgba(0, 217, 255, 0.3);
     margin: 0;
     padding-bottom: 10px;
 }
@@ -66,8 +67,8 @@ h1, h2, h3, .main-title {
 /* SUBHEADERS */
 h3 {
     font-size: 1.5rem !important;
-    color: #64748b;
-    border-bottom: 2px solid rgba(255,255,255,0.05);
+    color: #94a3b8;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
     padding-bottom: 10px;
     margin-top: 30px !important;
     display: flex;
@@ -75,25 +76,16 @@ h3 {
     gap: 10px;
 }
 
-/* STATUS CARDS */
-.status-box {
-    background: rgba(10, 10, 10, 0.8);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 4px;
-    padding: 2px; /* For border gradient effect if needed */
-    position: relative;
-    overflow: hidden;
-}
-
 /* RISK STATUS - ALLOWED */
 .risk-allowed {
-    background: linear-gradient(180deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+    background: linear-gradient(135deg, rgba(6, 78, 59, 0.4) 0%, rgba(6, 78, 59, 0.1) 100%);
     border: 1px solid #10b981;
-    box-shadow: 0 0 20px rgba(16, 185, 129, 0.2), inset 0 0 20px rgba(16, 185, 129, 0.1);
-    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(16, 185, 129, 0.15), inset 0 0 20px rgba(16, 185, 129, 0.05);
+    border-radius: 12px;
     padding: 24px;
     text-align: center;
     position: relative;
+    backdrop-filter: blur(10px);
 }
 
 .risk-allowed::before {
@@ -101,23 +93,25 @@ h3 {
     position: absolute;
     top: 0; left: 0; right: 0; height: 1px;
     background: linear-gradient(90deg, transparent, #10b981, transparent);
+    opacity: 0.5;
 }
 
 /* RISK STATUS - BLOCKED */
 .risk-blocked {
-    background: linear-gradient(180deg, rgba(239, 68, 68, 0.1) 0%, rgba(239, 68, 68, 0.05) 100%);
+    background: linear-gradient(135deg, rgba(127, 29, 29, 0.4) 0%, rgba(127, 29, 29, 0.1) 100%);
     border: 1px solid #ef4444;
-    box-shadow: 0 0 20px rgba(239, 68, 68, 0.2), inset 0 0 20px rgba(239, 68, 68, 0.1);
-    border-radius: 8px;
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.15), inset 0 0 20px rgba(239, 68, 68, 0.05);
+    border-radius: 12px;
     padding: 24px;
     text-align: center;
+    backdrop-filter: blur(10px);
 }
 
 /* SIGNAL STATUS */
 .signal-box {
-    background: rgba(15, 23, 42, 0.6);
+    background: rgba(15, 23, 42, 0.4);
     border: 1px solid rgba(56, 189, 248, 0.2);
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 24px;
     text-align: center;
     display: flex;
@@ -125,119 +119,75 @@ h3 {
     align-items: center;
     justify-content: center;
     height: 100%;
+    backdrop-filter: blur(5px);
 }
 
 .signal-pill {
-    padding: 8px 24px;
+    padding: 10px 30px;
     border-radius: 4px;
     font-family: 'JetBrains Mono', monospace;
     font-weight: 700;
     letter-spacing: 0.1em;
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     text-transform: uppercase;
 }
 
 .sig-trade { 
     background: #10b981; color: #000; 
-    box-shadow: 0 0 15px #10b981;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.6);
+    border: 1px solid #34d399;
 }
 .sig-pass { 
-    background: #ef4444; color: #fff;
-    box-shadow: 0 0 15px #ef4444;
+    background: rgba(239, 68, 68, 0.9); color: #fff;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.4);
+    border: 1px solid #f87171;
 }
 .sig-none { 
-    background: rgba(255,255,255,0.1); color: #94a3b8;
-    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(30, 41, 59, 0.8); color: #94a3b8;
+    border: 1px solid #475569;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
 }
 
 /* TERMINAL */
 .terminal-window {
-    background: #0a0a0a;
+    background: rgba(10, 10, 10, 0.95);
     border: 1px solid #333;
-    border-radius: 6px;
+    border-radius: 8px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
     padding: 0;
     overflow: hidden;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
     margin-bottom: 20px;
 }
 
 .terminal-header {
-    background: #1a1a1a;
-    padding: 8px 12px;
+    background: #171717;
+    padding: 10px 14px;
     border-bottom: 1px solid #333;
     display: flex;
-    gap: 6px;
+    gap: 8px;
+    align-items: center;
 }
-
-.term-dot { width: 10px; height: 10px; border-radius: 50%; }
-.term-red { background: #ff5f56; }
-.term-yellow { background: #ffbd2e; }
-.term-green { background: #27c93f; }
-
-.terminal-content {
-    padding: 16px;
-    color: #00f2ea;
-    height: 300px;
-    overflow-y: auto;
-    white-space: pre-wrap;
-}
-
-.t-info { color: #94a3b8; }
-.t-success { color: #10b981; text-shadow: 0 0 10px rgba(16, 185, 129, 0.5); }
-.t-warn { color: #f59e0b; }
-.t-err { color: #ef4444; }
-.t-cmd { color: #00f2ea; }
 
 /* TRADE CARD */
 .trade-card {
-    background: rgba(16, 20, 26, 0.9);
+    background: rgba(16, 20, 26, 0.6);
     border: 1px solid rgba(0, 217, 255, 0.2);
     border-top: 4px solid #00f2ea;
-    border-radius: 8px;
+    border-radius: 12px;
     padding: 0;
     margin: 20px 0;
     box-shadow: 0 20px 40px rgba(0,0,0,0.4);
     position: relative;
     overflow: hidden;
+    backdrop-filter: blur(10px);
 }
 
 .trade-header {
-    background: linear-gradient(90deg, rgba(0, 242, 234, 0.1) 0%, transparent 100%);
+    background: linear-gradient(90deg, rgba(0, 242, 234, 0.15) 0%, transparent 100%);
     padding: 20px;
-    border-bottom: 1px solid rgba(255,255,255,0.05);
-}
-
-.trade-title {
-    font-family: 'Rajdhani', sans-serif;
-    font-size: 1.8rem;
-    font-weight: 700;
-    color: #fff;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
-
-.trade-tag {
-    background: rgba(0, 242, 234, 0.2);
-    color: #00f2ea;
-    border: 1px solid rgba(0, 242, 234, 0.4);
-    padding: 4px 12px;
-    border-radius: 4px;
-    font-size: 14px;
-    font-family: 'JetBrains Mono', monospace;
-}
-
-.trade-body {
-    padding: 24px;
-}
-
-/* ORDER TICKET */
-.ticket-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr;
-    gap: 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
 }
 
 .ticket-code {
@@ -246,20 +196,10 @@ h3 {
     border-radius: 6px;
     padding: 20px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 13px;
-    color: #c9d1d9;
+    font-size: 14px;
+    color: #e6edf3;
     position: relative;
-}
-
-.copy-hint {
-    position: absolute;
-    top: 10px; right: 10px;
-    font-size: 10px;
-    color: #8b949e;
-    text-transform: uppercase;
-    border: 1px solid #30363d;
-    padding: 2px 6px;
-    border-radius: 4px;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
 }
 
 /* REGIME */
@@ -267,19 +207,21 @@ h3 {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 8px;
+    background: rgba(30, 41, 59, 0.3);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
     padding: 30px;
+    backdrop-filter: blur(5px);
 }
 
 .regime-big-text {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 4rem;
-    font-weight: 700;
+    font-size: 4.5rem;
+    font-weight: 800;
     line-height: 1;
     text-transform: uppercase;
-    text-shadow: 0 0 30px currentColor;
+    text-shadow: 0 0 40px currentColor;
+    margin: 10px 0;
 }
 
 /* BUTTONS */
@@ -291,38 +233,42 @@ h3 {
     font-weight: 700;
     font-size: 18px;
     text-transform: uppercase;
-    letter-spacing: 1px;
-    padding: 12px 30px;
-    border-radius: 4px;
+    letter-spacing: 2px;
+    padding: 14px 30px;
+    border-radius: 6px;
     transition: all 0.3s ease;
     width: 100%;
-    box-shadow: 0 0 20px rgba(0, 102, 255, 0.3);
+    box-shadow: 0 0 25px rgba(0, 102, 255, 0.4);
 }
 
 .stButton > button:hover {
-    box-shadow: 0 0 30px rgba(0, 217, 255, 0.6);
+    box-shadow: 0 0 40px rgba(0, 217, 255, 0.7);
     transform: translateY(-2px);
+    filter: brightness(1.1);
 }
 
 /* METRICS */
 [data-testid="stMetric"] {
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.05);
-    padding: 15px;
-    border-radius: 6px;
+    background: rgba(30, 41, 59, 0.2);
+    border: 1px solid rgba(255,255,255,0.08);
+    padding: 20px;
+    border-radius: 12px;
+    backdrop-filter: blur(5px);
 }
 
 [data-testid="stMetricLabel"] {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: #64748b;
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 [data-testid="stMetricValue"] {
     font-family: 'Rajdhani', sans-serif;
-    font-size: 2rem;
-    font-weight: 600;
-    color: #e2e8f0;
+    font-size: 2.2rem;
+    font-weight: 700;
+    color: #f1f5f9;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -475,16 +421,36 @@ def main():
         st.markdown('<h1 class="main-title">VOLMACHINE<span style="color:#fff; font-weight:300">DESK</span></h1>', unsafe_allow_html=True)
         st.caption(f"SYSTEM ONLINE • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} • v2.1")
         
+    # INIT SESSION STATE
+    if 'terminal_logs' not in st.session_state:
+        st.session_state['terminal_logs'] = []
+
+    # TERMINAL ZONE
+    terminal_placeholder = st.empty()
+    
+    # Always render existing logs if they exist
+    if st.session_state['terminal_logs']:
+        render_terminal(terminal_placeholder, st.session_state['terminal_logs'])
+
     with col2:
         if st.button("INITIATE SEQUENCE"):
-            ph = st.empty()
+            # Clear previous logs
+            st.session_state['terminal_logs'] = ["INITIALIZING SEQUENCE...", ""]
+            render_terminal(terminal_placeholder, st.session_state['terminal_logs'])
+            
             proc = run_engine_processed()
-            lines = []
+            
             for line in proc.stdout:
-                lines.append(line)
-                render_terminal(ph, lines)
+                line = line.strip()
+                if line:
+                    st.session_state['terminal_logs'].append(line)
+                    render_terminal(terminal_placeholder, st.session_state['terminal_logs'])
+            
             proc.wait()
             if proc.returncode == 0:
+                st.session_state['terminal_logs'].append("SEQUENCE COMPLETE. REFRESHING DATA...")
+                render_terminal(terminal_placeholder, st.session_state['terminal_logs'])
+                time.sleep(1)
                 st.rerun()
 
     # DATA LOAD
