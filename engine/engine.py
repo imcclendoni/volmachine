@@ -266,7 +266,7 @@ class VolMachineEngine:
         
         for symbol in symbols:
             try:
-                edges = self._detect_edges(symbol, regime)
+                edges, option_chain = self._detect_edges(symbol, regime)
                 
                 # Filter edges by health status (skip suspended edges)
                 tradeable_edges = []
@@ -284,7 +284,8 @@ class VolMachineEngine:
                 
                 all_edges.extend(edges)  # Still track all edges for reporting
                 
-                candidates = self._build_candidates(symbol, tradeable_edges, regime)
+                # Pass option_chain to avoid double fetching
+                candidates = self._build_candidates(symbol, tradeable_edges, regime, option_chain)
                 all_candidates.extend(candidates)
                 
             except Exception as e:
@@ -351,12 +352,18 @@ class VolMachineEngine:
         self,
         symbol: str,
         regime: RegimeClassification,
-    ) -> list[EdgeSignal]:
-        """Detect edges for a symbol."""
+    ) -> tuple[list[EdgeSignal], Optional[OptionChain]]:
+        """
+        Detect edges for a symbol.
+        
+        Returns:
+            Tuple of (edges, option_chain) - chain is returned for reuse in _build_candidates
+        """
         if self.provider is None:
-            return []
+            return [], None
         
         edges = []
+        option_chain = None
         
         try:
             # Get data using run_date as reference
@@ -395,27 +402,43 @@ class VolMachineEngine:
         except Exception as e:
             self.logger.error('edge_detection_failed', symbol=symbol, error=str(e))
         
-        return edges
+        return edges, option_chain
     
     def _build_candidates(
         self,
         symbol: str,
         edges: list[EdgeSignal],
         regime: RegimeClassification,
+        option_chain: Optional[OptionChain] = None,
     ) -> list[TradeCandidate]:
         """
         Build trade candidates from edges.
         
         CRITICAL: Validation gating - if validation fails OR sizing fails, candidate is PASS.
         Risk-aware: Search multiple widths until one passes validation+sizing.
+        
+        Args:
+            symbol: Symbol to build candidates for
+            edges: List of edge signals
+            regime: Regime classification
+            option_chain: Option chain to use (avoids double fetching)
         """
-        if not edges or self.provider is None:
+        if not edges:
             return []
+        
+        # Use passed option_chain or fetch if not provided
+        if option_chain is None:
+            if self.provider is None:
+                return []
+            option_chain = self.provider.get_option_chain(
+                symbol,
+                min_dte=self.builder_config.min_dte,
+                max_dte=self.builder_config.max_dte
+            )
         
         candidates = []
         
         try:
-            option_chain = self.provider.get_option_chain(symbol)
             
             for edge in edges:
                 # Try to find a valid structure (searching widths)
@@ -559,10 +582,9 @@ class VolMachineEngine:
                     details=failure_details)
                 continue
             
-            # Quick validation
             validation = validate_structure(structure, self.sizing_config.account_equity)
             if not validation.is_valid:
-                error_msgs = [str(e) for e in validation.errors[:3]]
+                error_msgs = [str(e) for e in validation.messages[:3]]
                 max_loss_dollars = structure.max_loss * 100 if structure.max_loss else 0
                 
                 attempt = StructureAttempt(
@@ -579,7 +601,8 @@ class VolMachineEngine:
                     symbol=option_chain.symbol, 
                     width=width, 
                     max_loss_dollars=round(max_loss_dollars, 2),
-                    errors=error_msgs)
+                    errors=error_msgs,
+                    warnings=validation.warnings[:3] if validation.warnings else [])
                 continue
             
             # Quick sizing check
@@ -750,16 +773,30 @@ class VolMachineEngine:
         short_strike = details.get('short_strike', atm_strike - width_points)
         long_strike = details.get('long_strike', short_strike - width_points)
         
-        # Try to find contracts for diagnosis
-        short_c = option_chain.get_contract(expiration, short_strike, OptionType.PUT)
-        long_c = option_chain.get_contract(expiration, long_strike, OptionType.PUT)
+        # Determine option type for diagnostics based on struct_type
+        if struct_type in ['put_credit_spread']:
+            diag_option_type = OptionType.PUT
+        elif struct_type in ['call_credit_spread', 'butterfly']:
+            diag_option_type = OptionType.CALL
+        elif struct_type in ['iron_condor']:
+            # For iron condor, check put side first (more common failure)
+            diag_option_type = OptionType.PUT
+        elif struct_type in ['calendar']:
+            # For calendar, use CALL by default
+            diag_option_type = OptionType.CALL
+        else:
+            diag_option_type = OptionType.PUT  # fallback
+        
+        # Try to find contracts for diagnosis using correct option type
+        short_c = option_chain.get_contract(expiration, short_strike, diag_option_type)
+        long_c = option_chain.get_contract(expiration, long_strike, diag_option_type)
         
         if short_c is None:
-            details['failure_reason'] = f'SHORT_STRIKE_NOT_FOUND({short_strike})'
+            details['failure_reason'] = f'SHORT_STRIKE_NOT_FOUND({short_strike}, {diag_option_type.value})'
             return None, struct_type, details
         
         if long_c is None:
-            details['failure_reason'] = f'LONG_STRIKE_NOT_FOUND({long_strike})'
+            details['failure_reason'] = f'LONG_STRIKE_NOT_FOUND({long_strike}, {diag_option_type.value})'
             return None, struct_type, details
         
         # Collect diagnostic metrics
