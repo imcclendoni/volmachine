@@ -305,6 +305,9 @@ class VolMachineEngine:
         
         for symbol in symbols:
             try:
+                # Get per-symbol config (merges global + universe overrides)
+                sym_config = self._get_symbol_config(symbol)
+                
                 edges, option_chain = self._detect_edges(symbol, regime)
                 
                 # Filter edges by health status (skip suspended edges)
@@ -323,8 +326,8 @@ class VolMachineEngine:
                 
                 all_edges.extend(edges)  # Still track all edges for reporting
                 
-                # Pass option_chain to avoid double fetching
-                candidates = self._build_candidates(symbol, tradeable_edges, regime, option_chain)
+                # Pass option_chain AND per-symbol config to avoid double fetching
+                candidates = self._build_candidates(symbol, tradeable_edges, regime, option_chain, sym_config)
                 all_candidates.extend(candidates)
                 
             except Exception as e:
@@ -452,6 +455,7 @@ class VolMachineEngine:
         edges: list[EdgeSignal],
         regime: RegimeClassification,
         option_chain: Optional[OptionChain] = None,
+        builder_cfg: Optional['BuilderConfig'] = None,
     ) -> list[TradeCandidate]:
         """
         Build trade candidates from edges.
@@ -464,9 +468,13 @@ class VolMachineEngine:
             edges: List of edge signals
             regime: Regime classification
             option_chain: Option chain to use (avoids double fetching)
+            builder_cfg: Per-symbol builder config (uses global if None)
         """
         if not edges:
             return []
+        
+        # Use passed config or global default
+        cfg = builder_cfg or self.builder_config
         
         # Use passed option_chain or fetch if not provided
         if option_chain is None:
@@ -474,8 +482,8 @@ class VolMachineEngine:
                 return []
             option_chain = self.provider.get_option_chain(
                 symbol,
-                min_dte=self.builder_config.min_dte,
-                max_dte=self.builder_config.max_dte
+                min_dte=cfg.min_dte,
+                max_dte=cfg.max_dte
             )
         
         candidates = []
@@ -485,7 +493,7 @@ class VolMachineEngine:
             for edge in edges:
                 # Try to find a valid structure (searching widths)
                 structure, validation_messages, attempt_diagnostics = self._find_valid_structure(
-                    edge, regime, option_chain
+                    edge, regime, option_chain, cfg
                 )
                 
                 if structure is None:
@@ -552,9 +560,16 @@ class VolMachineEngine:
         edge: EdgeSignal,
         regime: RegimeClassification,
         option_chain: OptionChain,
+        builder_cfg: Optional['BuilderConfig'] = None,
     ) -> tuple[Optional[OptionStructure], list[str], list]:
         """
         Find a structure that passes validation and sizing.
+        
+        Args:
+            edge: Edge signal to build structure for
+            regime: Current regime
+            option_chain: Option chain data
+            builder_cfg: Per-symbol builder config (uses global if None)
         
         Returns:
             Tuple of (structure, validation_messages, attempt_diagnostics)
@@ -563,6 +578,9 @@ class VolMachineEngine:
             - attempt_diagnostics: list of StructureAttempt for PASS diagnostics
         """
         from data.schemas import StructureAttempt
+        
+        # Use passed config or global default
+        cfg = builder_cfg or self.builder_config
         
         spot = option_chain.underlying_price
         atm_strike = round(spot)
@@ -573,15 +591,15 @@ class VolMachineEngine:
         # FIX: Width is NOT the same as max loss!
         # A $5 wide spread can have max loss < $500 if we receive credit.
         # Try widths from preferred_width_points down to min_width_points.
-        # Let the structure builder and sizing logic determine if the result fits risk cap.
+        # Use per-symbol config for these values.
         widths_to_try = list(range(
-            self.builder_config.preferred_width_points,
-            self.builder_config.min_width_points - 1,
+            cfg.preferred_width_points,
+            cfg.min_width_points - 1,
             -1
         ))
         
         if not widths_to_try:
-            widths_to_try = [self.builder_config.min_width_points]
+            widths_to_try = [cfg.min_width_points]
         
         # Collect all attempts for diagnostics
         attempts: list[StructureAttempt] = []
@@ -597,7 +615,7 @@ class VolMachineEngine:
         
         for width in widths_to_try:
             structure, struct_type, failure_details = self._build_structure_with_full_diagnostics(
-                edge, regime, option_chain, atm_strike, width
+                edge, regime, option_chain, atm_strike, width, cfg
             )
             
             if structure is None:
@@ -699,6 +717,7 @@ class VolMachineEngine:
         option_chain: OptionChain,
         atm_strike: float,
         width_points: int,
+        builder_cfg: Optional['BuilderConfig'] = None,
     ) -> tuple[Optional[OptionStructure], str, dict]:
         """
         Build a structure with comprehensive failure diagnostics.
@@ -714,10 +733,13 @@ class VolMachineEngine:
         
         details = {}
         
+        # Use passed config or global default
+        cfg = builder_cfg or self.builder_config
+        
         # First check: valid expiration
-        expiration = find_best_expiration(option_chain, self._run_date, self.builder_config)
+        expiration = find_best_expiration(option_chain, self._run_date, cfg)
         if expiration is None:
-            dte_range = f"{self.builder_config.min_dte}-{self.builder_config.max_dte}"
+            dte_range = f"{cfg.min_dte}-{cfg.max_dte}"
             return None, "unknown", {'failure_reason': f'NO_EXPIRY({dte_range})'}
         
         # Compute DTE for diagnostics
@@ -738,7 +760,7 @@ class VolMachineEngine:
                     call_short_strike=atm_strike + width_points * 2,
                     wing_width_points=width_points,
                     as_of_date=self._run_date,
-                    config=self.builder_config,
+                    config=cfg,
                 )
                 details['short_strike'] = atm_strike - width_points * 2  # put short
             else:
@@ -749,7 +771,7 @@ class VolMachineEngine:
                     atm_strike - width_points,
                     width_points=width_points,
                     as_of_date=self._run_date,
-                    config=self.builder_config,
+                    config=cfg,
                 )
                 details['short_strike'] = atm_strike - width_points
                 details['long_strike'] = atm_strike - width_points * 2
@@ -762,7 +784,7 @@ class VolMachineEngine:
                 center_strike=pin_strike,
                 wing_width_points=width_points,
                 as_of_date=self._run_date,
-                config=self.builder_config,
+                config=cfg,
             )
             details['short_strike'] = pin_strike
         
@@ -772,7 +794,7 @@ class VolMachineEngine:
                 option_chain,
                 strike=atm_strike,
                 as_of_date=self._run_date,
-                config=self.builder_config,
+                config=cfg,
             )
             details['short_strike'] = atm_strike
         
@@ -785,7 +807,7 @@ class VolMachineEngine:
                     atm_strike - width_points,
                     width_points=width_points,
                     as_of_date=self._run_date,
-                    config=self.builder_config,
+                    config=cfg,
                 )
                 details['short_strike'] = atm_strike - width_points
                 details['long_strike'] = atm_strike - width_points * 2
