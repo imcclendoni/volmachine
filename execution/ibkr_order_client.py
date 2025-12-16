@@ -289,12 +289,14 @@ class IBKROrderClient:
         
         return ticket
     
-    def submit_order(self, ticket: OrderTicket) -> OrderTicket:
+    def submit_order(self, ticket: OrderTicket, transmit: bool = False) -> OrderTicket:
         """
         Submit BAG order to IBKR.
         
         Args:
             ticket: OrderTicket to submit
+            transmit: If False, order is created but not sent (preview).
+                      If True, order is sent to exchange.
             
         Returns:
             Updated OrderTicket with order_id
@@ -332,20 +334,66 @@ class IBKROrderClient:
         if ticket.limit_price is not None:
             order.lmtPrice = ticket.limit_price
         
-        # PAPER MODE: Always use paper transmit
-        order.transmit = True
+        # TRANSMIT CONTROL:
+        # - False = order created in TWS but NOT sent to exchange (preview)
+        # - True = order sent to exchange for execution
+        order.transmit = transmit
         
         # Submit order
         trade = self._ib.placeOrder(bag, order)
         
         ticket.order_id = trade.order.orderId
         ticket.perm_id = trade.order.permId
-        ticket.status = OrderStatus.SUBMITTED
-        ticket.submitted_at = datetime.now()
         
-        logger.info(f"Order submitted: orderId={ticket.order_id}, permId={ticket.perm_id}")
+        if transmit:
+            ticket.status = OrderStatus.SUBMITTED
+            ticket.submitted_at = datetime.now()
+            logger.info(f"Order TRANSMITTED to exchange: orderId={ticket.order_id}, permId={ticket.perm_id}")
+        else:
+            ticket.status = OrderStatus.PENDING
+            logger.info(f"Order created (preview, not transmitted): orderId={ticket.order_id}")
         
         return ticket
+    
+    def transmit_order(self, ticket: OrderTicket) -> OrderTicket:
+        """
+        Transmit a previously created order to the exchange.
+        
+        Use this after submit_order(transmit=False) to actually send the order.
+        """
+        if not self._connected:
+            raise ConnectionError("Not connected to IBKR")
+        
+        if not ticket.order_id:
+            raise ValueError("Order has no order_id - must call submit_order first")
+        
+        from ib_insync import Order
+        
+        # Find the pending order and transmit it
+        for trade in self._ib.openTrades():
+            if trade.order.orderId == ticket.order_id:
+                # Modify order to transmit
+                trade.order.transmit = True
+                self._ib.placeOrder(trade.contract, trade.order)
+                
+                ticket.status = OrderStatus.SUBMITTED
+                ticket.submitted_at = datetime.now()
+                logger.info(f"Order TRANSMITTED: orderId={ticket.order_id}")
+                return ticket
+        
+        raise ValueError(f"Order {ticket.order_id} not found in open trades")
+    
+    def get_account_id(self) -> str:
+        """Get the connected account ID."""
+        if not self._connected or not self._ib:
+            return "NOT_CONNECTED"
+        
+        accounts = self._ib.managedAccounts()
+        return accounts[0] if accounts else "UNKNOWN"
+    
+    def is_connected(self) -> bool:
+        """Check if connected to IBKR."""
+        return self._connected and self._ib is not None
     
     def cancel_order(self, ticket: OrderTicket) -> OrderTicket:
         """Cancel a pending order."""
