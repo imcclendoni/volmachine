@@ -50,6 +50,7 @@ from structures import (
     build_iron_condor,
     build_butterfly,
     build_calendar,
+    build_debit_spread,
     validate_structure,
     ValidationConfig,
 )
@@ -799,6 +800,7 @@ class VolMachineEngine:
             details['short_strike'] = atm_strike
         
         elif edge.edge_type == EdgeType.SKEW_EXTREME:
+            # SKEW_STEEP (is_steep=1.0): Sell overpriced puts via credit spread
             if edge.metrics.get('is_steep', 0) == 1.0:
                 struct_type = "put_credit_spread"
                 structure = build_credit_spread(
@@ -811,9 +813,27 @@ class VolMachineEngine:
                 )
                 details['short_strike'] = atm_strike - width_points
                 details['long_strike'] = atm_strike - width_points * 2
+            
+            # SKEW_FLAT (is_flat=1.0): Buy cheap tail protection via debit spread
+            elif edge.metrics.get('is_flat', 0) == 1.0:
+                struct_type = "put_debit_spread"
+                # Debit spread: buy put closer to ATM, sell put further OTM
+                long_strike = atm_strike - width_points  # Closer to ATM
+                short_strike = atm_strike - width_points * 2  # Further OTM
+                structure = build_debit_spread(
+                    option_chain,
+                    OptionType.PUT,
+                    long_strike=long_strike,
+                    width_points=width_points,
+                    as_of_date=self._run_date,
+                    config=cfg,
+                )
+                details['long_strike'] = long_strike
+                details['short_strike'] = short_strike
+            
             else:
-                details['failure_reason'] = 'SKEW_NOT_STEEP'
-                return None, "put_credit_spread", details
+                details['failure_reason'] = 'SKEW_NOT_EXTREME'
+                return None, "put_spread", details
         
         elif edge.edge_type == EdgeType.EVENT_VOL:
             struct_type = "iron_condor"
