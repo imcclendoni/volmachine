@@ -236,9 +236,17 @@ def run_engine_processed():
     script_path = Path(__file__).parent.parent / 'scripts' / 'run_daily.py'
     env = os.environ.copy()
     
-    # Inject API key if missing (using the known key)
-    if 'POLYGON_API_KEY' not in env:
-        env['POLYGON_API_KEY'] = "lrpYXeKqUp8pBGDlbz1BdJwsmpnpiKzu"
+    # Priority: 1) st.secrets (Cloud), 2) env var, 3) hardcoded fallback
+    api_key = None
+    try:
+        api_key = st.secrets.get("POLYGON_API_KEY")
+    except:
+        pass
+    
+    if not api_key:
+        api_key = os.environ.get('POLYGON_API_KEY', 'lrpYXeKqUp8pBGDlbz1BdJwsmpnpiKzu')
+    
+    env['POLYGON_API_KEY'] = api_key
         
     process = subprocess.Popen(
         [sys.executable, str(script_path)],
