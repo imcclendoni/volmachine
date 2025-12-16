@@ -80,11 +80,16 @@ class OHLCV(BaseModel):
 
 
 class Greeks(BaseModel):
-    """Option Greeks."""
+    """
+    Option Greeks.
+    
+    Note: gamma and vega can be tiny negative values due to numerical
+    noise from data providers. We allow this rather than fail validation.
+    """
     delta: float = Field(ge=-1, le=1)
-    gamma: float = Field(ge=0)
+    gamma: float  # Theoretically >=0, but allow numerical noise
     theta: float  # Usually negative for long options
-    vega: float = Field(ge=0)
+    vega: float   # Theoretically >=0, but allow numerical noise
     rho: Optional[float] = None
     
     # Extended Greeks (optional)

@@ -70,8 +70,17 @@ class PolygonProvider(DataProvider):
             self._session = None
         self._connected = False
     
-    def _request(self, endpoint: str, params: dict = None) -> dict:
-        """Make authenticated request to Polygon API."""
+    def _request(self, endpoint: str, params: dict = None, retries: int = 3) -> dict:
+        """
+        Make authenticated request to Polygon API with rate limit handling.
+        
+        Args:
+            endpoint: API endpoint
+            params: Query parameters
+            retries: Number of retries on rate limit (429)
+        """
+        import time
+        
         if not self._session:
             raise DataProviderError("Not connected to Polygon")
         
@@ -81,34 +90,57 @@ class PolygonProvider(DataProvider):
         params['apiKey'] = self.api_key
         
         url = f"{self.base_url}{endpoint}"
-        response = self._session.get(url, params=params)
         
-        if response.status_code != 200:
+        for attempt in range(retries + 1):
+            response = self._session.get(url, params=params)
+            
+            if response.status_code == 200:
+                return response.json()
+            
+            # Rate limit - wait and retry
+            if response.status_code == 429:
+                if attempt < retries:
+                    wait_time = 2 ** attempt  # Exponential backoff: 1, 2, 4 seconds
+                    time.sleep(wait_time)
+                    continue
+            
+            # Other errors - fail immediately
             raise DataProviderError(
                 f"Polygon API error: {response.status_code} - {response.text}"
             )
         
-        return response.json()
+        # Should not reach here, but safety fallback
+        raise DataProviderError(f"Polygon API failed after {retries} retries")
     
     # =========================================================================
     # Underlying Price Data
     # =========================================================================
     
     def get_current_price(self, symbol: str) -> float:
-        """Get current price from Polygon snapshot."""
-        data = self._request(f"/v2/snapshot/locale/us/markets/stocks/tickers/{symbol}")
+        """
+        Get current/latest price from Polygon.
         
-        if 'ticker' not in data:
-            raise DataProviderError(f"No data found for {symbol}")
+        Uses daily aggregates (bars) endpoint instead of snapshot
+        since snapshot requires Stocks Starter add-on.
+        """
+        from datetime import date, timedelta
         
-        ticker = data['ticker']
-        # Use last trade price, or close if last not available
-        price = ticker.get('lastTrade', {}).get('p') or ticker.get('day', {}).get('c')
+        today = date.today()
+        # Get last 5 days to handle weekends/holidays
+        start = (today - timedelta(days=7)).isoformat()
+        end = today.isoformat()
         
-        if price is None:
-            raise DataProviderError(f"No price available for {symbol}")
+        data = self._request(
+            f"/v2/aggs/ticker/{symbol}/range/1/day/{start}/{end}",
+            params={'adjusted': 'true', 'sort': 'desc', 'limit': 1}
+        )
         
-        return float(price)
+        results = data.get('results', [])
+        if not results:
+            raise DataProviderError(f"No price data found for {symbol}")
+        
+        # Return most recent close
+        return float(results[0]['c'])
     
     def get_historical_ohlcv(
         self,
