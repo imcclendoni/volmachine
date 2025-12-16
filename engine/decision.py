@@ -192,6 +192,7 @@ def create_trade_candidate(
         recommended_contracts=sizing.recommended_contracts,
         risk_per_contract=sizing.risk_per_contract_dollars,
         total_risk=sizing.total_risk_dollars,
+        what_if_sizes=sizing.what_if_sizes,  # Risk ladder (1%, 2%, 5%, 10%)
         is_valid=sizing.allowed and len(validation_messages) == 0,
         validation_messages=validation_messages,
         recommendation=recommendation,

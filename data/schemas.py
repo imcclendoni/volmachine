@@ -430,6 +430,9 @@ class TradeCandidate(BaseModel):
     risk_per_contract: float = Field(ge=0)  # Allow 0 for PASS
     total_risk: float = Field(ge=0)  # Allow 0 for PASS
     
+    # What-if sizing at alternative risk levels (1%, 2%, 5%, 10%)
+    what_if_sizes: Optional[dict] = None
+    
     # Validation results
     is_valid: bool = True
     validation_messages: list[str] = Field(default_factory=list)

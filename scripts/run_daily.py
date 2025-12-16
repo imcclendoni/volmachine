@@ -160,11 +160,19 @@ def main():
         for i, c in enumerate(report.candidates[:5], 1):
             emoji = "✅" if c.recommendation == "TRADE" else "⚠️" if c.recommendation == "REVIEW" else "❌"
             print(f"{i}. {emoji} {c.symbol} - {c.structure.structure_type.value}")
-            print(f"   Edge: {c.edge.edge_type.value} ({c.edge.strength:.0%})")
+            # Add FALLBACK warning if edge using absolute thresholds (no percentile history)
+            is_fallback = c.edge.metrics.get('history_mode', 1) == 0 if c.edge and c.edge.metrics else False
+            fallback_label = " [FALLBACK]" if is_fallback else ""
+            print(f"   Edge: {c.edge.edge_type.value} ({c.edge.strength:.0%}){fallback_label}")
             # IMPORTANT: Use max_loss_dollars not max_loss (points vs dollars)
             max_loss_dollars = c.structure.max_loss_dollars if c.structure.max_loss_dollars else 0
             max_loss_str = f"${max_loss_dollars:.2f}" if max_loss_dollars else "N/A"
             print(f"   Max Loss: {max_loss_str}, Contracts: {c.recommended_contracts}")
+            # Show risk ladder (what-if sizing at 1%, 2%, 5%, 10%)
+            if hasattr(c, 'what_if_sizes') and c.what_if_sizes:
+                ladder = ", ".join([f"{k}={v['contracts']}ct" for k, v in c.what_if_sizes.items() if v.get('allowed', False)])
+                if ladder:
+                    print(f"   Risk Ladder: {ladder}")
     
     # Save report
     if not args.dry_run:

@@ -189,6 +189,8 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
             'direction': edge.direction if edge else 'unknown',
             'metrics': edge.metrics if edge else {},
             'rationale': edge.rationale if edge else '',
+            # Fallback mode: edge using absolute thresholds without percentile history
+            'is_fallback': edge.metrics.get('history_mode', 1) == 0 if edge and edge.metrics else False,
         },
         
         # Regime at time of candidate

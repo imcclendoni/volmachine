@@ -1,0 +1,4 @@
+{"timestamp": "2025-12-16T16:42:49.471328", "level": "INFO", "event": "paper_mode_active", "data": {"min_oi": 50, "min_vol": 10, "max_bid_ask_pct": 8.0, "enforce_liquidity": false}}
+{"timestamp": "2025-12-16T16:42:49.749332", "level": "INFO", "event": "provider_connected", "data": {"provider": "PolygonProvider"}}
+{"timestamp": "2025-12-16T16:42:49.749428", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T16:42:49.846337", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
