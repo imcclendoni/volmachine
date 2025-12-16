@@ -173,11 +173,11 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
             'breakevens': structure.breakevens if structure else [],
         } if structure else None,
         
-        # Sizing
+        # Sizing - use direct attributes, not candidate.sizing
         'sizing': {
-            'recommended_contracts': candidate.sizing.recommended_contracts if candidate.sizing else 0,
-            'risk_per_contract_dollars': candidate.sizing.risk_per_contract_dollars if candidate.sizing else 0,
-            'total_risk_dollars': candidate.sizing.total_risk_dollars if candidate.sizing else 0,
+            'recommended_contracts': candidate.recommended_contracts,
+            'risk_per_contract_dollars': candidate.risk_per_contract,
+            'total_risk_dollars': candidate.total_risk,
         },
         
         # Edge info
