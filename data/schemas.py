@@ -345,22 +345,22 @@ class OptionStructure(BaseModel):
     @property
     def entry_debit_dollars(self) -> Optional[float]:
         """Entry debit in dollars per contract."""
-        return self.entry_debit * self._multiplier if self.entry_debit else None
+        return self.entry_debit * self._multiplier if self.entry_debit is not None else None
     
     @property
     def entry_credit_dollars(self) -> Optional[float]:
         """Entry credit in dollars per contract."""
-        return self.entry_credit * self._multiplier if self.entry_credit else None
+        return self.entry_credit * self._multiplier if self.entry_credit is not None else None
     
     @property
     def max_loss_dollars(self) -> Optional[float]:
         """Max loss in dollars per contract."""
-        return self.max_loss * self._multiplier if self.max_loss else None
+        return self.max_loss * self._multiplier if self.max_loss is not None else None
     
     @property
     def max_profit_dollars(self) -> Optional[float]:
         """Max profit in dollars per contract."""
-        return self.max_profit * self._multiplier if self.max_profit else None
+        return self.max_profit * self._multiplier if self.max_profit is not None else None
     
     @property
     def is_defined_risk(self) -> bool:
