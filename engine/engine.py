@@ -137,6 +137,12 @@ class VolMachineEngine:
             account_equity=account_equity,
         )
         
+        # Edge health tracker (for monitoring, NOT optimization)
+        from engine.edge_health import EdgePerformanceTracker
+        self.edge_tracker = EdgePerformanceTracker(
+            storage_path=Path(self.config.get('logging', {}).get('log_directory', './logs')) / 'edge_health'
+        )
+        
         # State
         self._current_regime: Optional[RegimeClassification] = None
         self._edge_signals: list[EdgeSignal] = []
@@ -260,9 +266,24 @@ class VolMachineEngine:
         for symbol in symbols:
             try:
                 edges = self._detect_edges(symbol, regime)
-                all_edges.extend(edges)
                 
-                candidates = self._build_candidates(symbol, edges, regime)
+                # Filter edges by health status (skip suspended edges)
+                tradeable_edges = []
+                for edge in edges:
+                    is_tradeable, reason = self.edge_tracker.is_edge_tradeable(edge.edge_type)
+                    if is_tradeable:
+                        tradeable_edges.append(edge)
+                    else:
+                        self.logger.info(
+                            'edge_suspended', 
+                            edge_type=edge.edge_type.value, 
+                            symbol=symbol,
+                            reason=reason
+                        )
+                
+                all_edges.extend(edges)  # Still track all edges for reporting
+                
+                candidates = self._build_candidates(symbol, tradeable_edges, regime)
                 all_candidates.extend(candidates)
                 
             except Exception as e:
