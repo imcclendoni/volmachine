@@ -42,6 +42,7 @@ class EdgeType(str, Enum):
 
 class StructureType(str, Enum):
     """Option structure types."""
+    NONE = "none"  # Placeholder for PASS candidates with no valid structure
     CREDIT_SPREAD = "credit_spread"
     DEBIT_SPREAD = "debit_spread"
     IRON_CONDOR = "iron_condor"

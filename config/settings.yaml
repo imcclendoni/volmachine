@@ -138,6 +138,17 @@ paper:
   slippage_pct: 0.5  # 0.5% slippage on fills
   fill_at: "conservative"  # Options: mid, bid, ask, conservative
 
+# Operating Mode: paper | live
+# Paper mode relaxes liquidity requirements for testing
+mode: "paper"
+
+# Paper mode liquidity overrides (used when mode=paper)
+paper_mode_liquidity:
+  min_open_interest: 50      # Relaxed from 500
+  min_volume: 10             # Relaxed from 100
+  max_bid_ask_width_pct: 8.0  # Relaxed from 5.0
+  enforce_liquidity: false   # Don't reject on liquidity failures
+
 # Logging Configuration
 logging:
   level: "INFO"

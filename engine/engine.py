@@ -205,16 +205,40 @@ class VolMachineEngine:
         expiry = structure_config.get('expiry', {})
         strikes = structure_config.get('strikes', {})
         
+        # Check operating mode: paper | live
+        operating_mode = self.config.get('mode', 'paper')
+        self._operating_mode = operating_mode
+        
+        # Apply paper mode liquidity overrides if mode=paper
+        if operating_mode == 'paper':
+            paper_liq = self.config.get('paper_mode_liquidity', {})
+            min_volume = paper_liq.get('min_volume', 10)  # Relaxed
+            min_open_interest = paper_liq.get('min_open_interest', 50)  # Relaxed
+            max_bid_ask_pct = paper_liq.get('max_bid_ask_width_pct', 8.0)  # Relaxed
+            enforce_liquidity = paper_liq.get('enforce_liquidity', False)  # Don't enforce
+            self.logger.info("paper_mode_active",
+                min_oi=min_open_interest,
+                min_vol=min_volume,
+                max_bid_ask_pct=max_bid_ask_pct,
+                enforce_liquidity=enforce_liquidity,
+            )
+        else:
+            # Live mode - use strict liquidity
+            min_volume = liquidity.get('min_volume', 100)
+            min_open_interest = liquidity.get('min_open_interest', 500)
+            max_bid_ask_pct = liquidity.get('max_bid_ask_width_pct', 5.0)
+            enforce_liquidity = structure_config.get('enforce_liquidity', True)
+        
         # Handle preferred_dte which can be list or int
         preferred_dte = expiry.get('preferred_dte', [30])
         target_dte = preferred_dte[0] if isinstance(preferred_dte, list) and preferred_dte else (preferred_dte if isinstance(preferred_dte, int) else 30)
         
         self.builder_config = BuilderConfig(
-            # Liquidity settings
-            min_volume=liquidity.get('min_volume', 100),
-            min_open_interest=liquidity.get('min_open_interest', 500),
-            max_bid_ask_pct=liquidity.get('max_bid_ask_width_pct', 5.0),
-            enforce_liquidity=structure_config.get('enforce_liquidity', True),
+            # Liquidity settings (mode-dependent)
+            min_volume=min_volume,
+            min_open_interest=min_open_interest,
+            max_bid_ask_pct=max_bid_ask_pct,
+            enforce_liquidity=enforce_liquidity,
             # Expiry settings
             min_dte=expiry.get('min_dte', 7),
             max_dte=expiry.get('max_dte', 60),
@@ -973,9 +997,10 @@ class VolMachineEngine:
         
         # Create minimal placeholder structure with safe defaults (not a real trade)
         # is_placeholder=True bypasses validation requirements
+        # Use StructureType.NONE to clearly indicate no valid structure found
         # Use 0.0 instead of None to avoid formatting crashes
         dummy_structure = OptionStructure(
-            structure_type=StructureType.CREDIT_SPREAD,
+            structure_type=StructureType.NONE,  # Changed from CREDIT_SPREAD
             symbol=symbol,
             legs=[],
             entry_credit=0.0,
