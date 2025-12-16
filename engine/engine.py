@@ -364,7 +364,11 @@ class VolMachineEngine:
             start_date = end_date - timedelta(days=300)
             
             ohlcv = self.provider.get_historical_ohlcv(symbol, start_date, end_date)
-            option_chain = self.provider.get_option_chain(symbol)
+            option_chain = self.provider.get_option_chain(
+                symbol,
+                min_dte=self.builder_config.min_dte,
+                max_dte=self.builder_config.max_dte
+            )
             
             # Run all detectors
             vrp = self.vrp_detector.detect(symbol, option_chain, ohlcv, regime.regime)
