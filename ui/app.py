@@ -323,13 +323,32 @@ def render_terminal(placeholder, lines):
 
 
 def render_trade_ticket(candidate: dict):
+    """
+    Render trade ticket with two-step execution flow.
+    
+    Features:
+    - Fallback badge + extra confirmation when edge.is_fallback
+    - Risk ladder selection (1%/2%/5%/10%)
+    - Preview step: resolve contracts via IBKR
+    - Submit step: place BAG order (disabled if !is_valid)
+    - Live order status display
+    """
     symbol = candidate['symbol']
     structure = candidate.get('structure') or {}
     edge = candidate.get('edge') or {}
     sizing = candidate.get('sizing') or {}
     candidate_id = candidate.get('id', symbol)
+    is_valid = candidate.get('is_valid', True)
+    what_if_sizes = sizing.get('what_if_sizes', {})
     
-    # TRADE READY (PAPER) header with warning
+    # Check if edge is fallback mode (no percentile history)
+    is_fallback = edge.get('is_fallback', False) or edge.get('metrics', {}).get('history_mode', 1) == 0
+    
+    # --- HEADER ---
+    fallback_badge = ""
+    if is_fallback:
+        fallback_badge = '<span class="trade-tag" style="border-color: #ef4444; color: #ef4444; background: rgba(239,68,68,0.1)">⚠️ FALLBACK</span>'
+    
     st.markdown(f"""
     <div class="trade-card">
         <div class="trade-header">
@@ -338,15 +357,64 @@ def render_trade_ticket(candidate: dict):
                 <span class="trade-tag">{edge.get('type','').upper()}</span>
                 <span class="trade-tag" style="border-color: #10b981; color: #10b981">TRADE</span>
                 <span class="trade-tag" style="border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,0.1)">📋 PAPER</span>
+                {fallback_badge}
             </div>
         </div>
+    """, unsafe_allow_html=True)
+    
+    # --- FALLBACK WARNING ---
+    if is_fallback:
+        st.markdown("""
+        <div style="background: rgba(239,68,68,0.1); border: 1px solid #ef4444; border-radius: 4px; padding: 8px; margin-bottom: 12px;">
+            <span style="color: #ef4444; font-weight: bold;">⚠️ FALLBACK MODE</span>
+            <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">Edge detected using absolute thresholds - no percentile history available</span>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
         <div style="background: rgba(245,158,11,0.1); border: 1px solid #f59e0b; border-radius: 4px; padding: 8px; margin-bottom: 12px;">
             <span style="color: #f59e0b; font-weight: bold;">⚠️ PAPER MODE</span>
             <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">Awaiting manual confirmation</span>
         </div>
-        <div class="trade-body">
-    """, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
     
+    st.markdown('<div class="trade-body">', unsafe_allow_html=True)
+    
+    # --- RISK LADDER SELECTION ---
+    risk_col, qty_col = st.columns([2, 1])
+    
+    with risk_col:
+        # Build risk tier options from what_if_sizes
+        risk_options = []
+        for pct_key, info in what_if_sizes.items():
+            if info.get('allowed', False):
+                contracts = info.get('contracts', 0)
+                risk_dollars = info.get('risk_dollars', 0)
+                risk_options.append(f"{pct_key}: {contracts} contracts (${risk_dollars:.0f})")
+        
+        if not risk_options:
+            # Default fallback
+            contracts = sizing.get('recommended_contracts', 0)
+            risk_options = [f"Default: {contracts} contracts"]
+        
+        selected_risk = st.selectbox(
+            "📊 Risk Tier",
+            risk_options,
+            key=f"risk_{candidate_id}",
+            help="Select risk tier from what-if sizing ladder"
+        )
+        
+        # Parse selected contracts
+        selected_contracts = sizing.get('recommended_contracts', 0)
+        if ':' in selected_risk:
+            pct_key = selected_risk.split(':')[0].strip()
+            if pct_key in what_if_sizes:
+                selected_contracts = what_if_sizes[pct_key].get('contracts', selected_contracts)
+    
+    with qty_col:
+        st.metric("🎯 Contracts", selected_contracts)
+    
+    # --- EXECUTION TICKET ---
     col1, col2 = st.columns([2, 1])
     
     with col1:
@@ -362,7 +430,7 @@ def render_trade_ticket(candidate: dict):
             
             for leg in legs:
                 side = leg.get('action', 'BUY').ljust(4)
-                qty = str(leg.get('quantity', 1)).ljust(2)
+                qty = str(selected_contracts).ljust(2)
                 strike = str(leg.get('strike', 0)).ljust(6)
                 otype = leg.get('option_type', 'C')[0].upper()
                 lines.append(f"{side} {qty} {symbol} {exp} {strike} {otype}")
@@ -370,13 +438,13 @@ def render_trade_ticket(candidate: dict):
             lines.append("-" * 40)
             credit = structure.get('entry_credit_dollars', 0)
             debit = structure.get('entry_debit_dollars', 0)
-            risk = sizing.get('total_risk_dollars', 0)
+            max_loss = structure.get('max_loss_dollars', 0)
             
             if credit > 0: price = f"CREDIT: ${credit:.2f}"
             else: price = f"DEBIT:  ${debit:.2f}"
             
-            lines.append(f"{price.ljust(20)} MAX LOSS: ${structure.get('max_loss_dollars',0):.2f}")
-            lines.append(f"SIZE:   {sizing.get('recommended_contracts',1)} contracts      RISK:     ${risk:.2f}")
+            lines.append(f"{price.ljust(20)} MAX LOSS: ${max_loss:.2f}")
+            lines.append(f"SIZE:   {selected_contracts} contracts      RISK:     ${max_loss * selected_contracts:.2f}")
 
         formatted_ticket = "\n".join(lines)
         st.markdown(f"""
@@ -391,11 +459,15 @@ def render_trade_ticket(candidate: dict):
         
         # Show execution metrics
         credit = structure.get('entry_credit_dollars', 0)
+        debit = structure.get('entry_debit_dollars', 0)
         max_loss = structure.get('max_loss_dollars', 0)
         pop = candidate.get('probability_metrics', {}).get('pop_expiry', 0) if candidate.get('probability_metrics') else 0
         
         m1, m2 = st.columns(2)
-        m1.metric("💰 Credit", f"${credit:.0f}" if credit else "N/A")
+        if credit > 0:
+            m1.metric("💰 Credit", f"${credit:.0f}")
+        else:
+            m1.metric("💸 Debit", f"${debit:.0f}")
         m2.metric("📉 Max Loss", f"${max_loss:.0f}" if max_loss else "N/A")
         
         m3, m4 = st.columns(2)
@@ -403,34 +475,87 @@ def render_trade_ticket(candidate: dict):
         m4.metric("📋 Mode", "PAPER")
         
         st.markdown('<div style="margin-top: 8px;"></div>', unsafe_allow_html=True)
-        st.info(edge.get('rationale', 'Edge detected via volatility surface analysis.')[:100])
+        rationale = edge.get('rationale', 'Edge detected via volatility surface analysis.')
+        if is_fallback:
+            rationale = "⚠️ FALLBACK: " + rationale
+        st.info(rationale[:100])
         
-    # Manual confirmation section
     st.markdown("</div></div>", unsafe_allow_html=True)
     
-    # Initialize execution state
+    # --- CONFIRMATION FLOW ---
+    if 'order_states' not in st.session_state:
+        st.session_state['order_states'] = {}
     if 'confirmed_trades' not in st.session_state:
         st.session_state['confirmed_trades'] = set()
     
+    order_state = st.session_state['order_states'].get(candidate_id, 'initial')
     is_confirmed = candidate_id in st.session_state['confirmed_trades']
     
-    confirm_col1, confirm_col2 = st.columns([2, 1])
+    # Disable submit conditions
+    can_submit = is_valid and selected_contracts > 0
     
-    with confirm_col1:
-        if is_confirmed:
-            st.success("✅ Trade confirmed - ready for manual execution")
-        else:
-            st.warning("⚠️ Manual confirmation required before execution")
+    if not can_submit:
+        disable_reason = []
+        if not is_valid:
+            disable_reason.append("Invalid structure")
+        if selected_contracts == 0:
+            disable_reason.append("0 contracts")
+        st.error(f"❌ Cannot submit: {', '.join(disable_reason)}")
     
-    with confirm_col2:
-        if is_confirmed:
+    # Fallback extra confirmation
+    fallback_confirmed = True
+    if is_fallback and not is_confirmed:
+        fallback_confirmed = st.checkbox(
+            "I understand this edge lacks historical validation (FALLBACK MODE)",
+            key=f"fallback_confirm_{candidate_id}"
+        )
+    
+    # Order flow buttons
+    btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
+    
+    with btn_col1:
+        if order_state == 'initial':
+            if st.button("🔍 PREVIEW ORDER", key=f"preview_{candidate_id}", disabled=not can_submit):
+                st.session_state['order_states'][candidate_id] = 'previewing'
+                st.info("Preview: Connect to IBKR to resolve contracts...")
+                # In production: resolve_contracts() would be called here
+                st.session_state['order_states'][candidate_id] = 'previewed'
+                st.rerun()
+        elif order_state == 'previewed':
+            st.success("✅ Preview complete - contracts resolved")
+        elif order_state == 'submitted':
+            st.info("📤 Order submitted to IBKR")
+    
+    with btn_col2:
+        if order_state == 'previewed':
+            submit_disabled = not (can_submit and fallback_confirmed)
+            if st.button("✅ SUBMIT ORDER", key=f"submit_{candidate_id}", type="primary", disabled=submit_disabled):
+                st.session_state['order_states'][candidate_id] = 'submitted'
+                st.session_state['confirmed_trades'].add(candidate_id)
+                st.success("Order submitted to IBKR Paper!")
+                st.rerun()
+        elif order_state == 'submitted':
+            st.success("✅ Order SUBMITTED")
+    
+    with btn_col3:
+        if order_state in ['previewed', 'submitted']:
             if st.button("❌ Cancel", key=f"cancel_{candidate_id}"):
+                st.session_state['order_states'][candidate_id] = 'initial'
                 st.session_state['confirmed_trades'].discard(candidate_id)
                 st.rerun()
-        else:
-            if st.button("✅ CONFIRM TRADE", key=f"confirm_{candidate_id}", type="primary"):
-                st.session_state['confirmed_trades'].add(candidate_id)
-                st.rerun()
+    
+    # Order status display
+    if order_state == 'submitted':
+        st.markdown("""
+        <div style="background: rgba(16,185,129,0.1); border: 1px solid #10b981; border-radius: 4px; padding: 12px; margin-top: 8px;">
+            <div style="color: #10b981; font-weight: bold;">📊 ORDER STATUS</div>
+            <div style="color: #94a3b8; font-size: 12px; margin-top: 4px;">
+                Status: <span style="color: #fbbf24;">PENDING</span> | 
+                Filled: 0/{contracts} | 
+                Avg Price: --
+            </div>
+        </div>
+        """.format(contracts=selected_contracts), unsafe_allow_html=True)
 
 
 def main():

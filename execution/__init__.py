@@ -39,6 +39,16 @@ from execution.ibkr_validator import (
     validate_account_is_paper,
 )
 
+from execution.ibkr_order_client import (
+    IBKROrderClient,
+    OrderTicket,
+    ResolvedLeg,
+    OrderStatus,
+    LiveTradingBlocked,
+    get_ibkr_client,
+    reset_ibkr_client,
+)
+
 
 __all__ = [
     # Config
