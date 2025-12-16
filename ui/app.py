@@ -452,10 +452,11 @@ def render_trade_ticket(candidate: dict):
             lines.append(f"{price.ljust(20)} MAX LOSS: ${structure.get('max_loss_dollars',0):.2f}")
             lines.append(f"SIZE:   {sizing.get('recommended_contracts',1)} contracts      RISK:     ${risk:.2f}")
 
+        formatted_ticket = "\n".join(lines)
         st.markdown(f"""
         <div class="ticket-code">
             <div class="copy-hint">COPY</div>
-            <pre style="margin:0">{"\n".join(lines)}</pre>
+            <pre style="margin:0">{formatted_ticket}</pre>
         </div>
         """, unsafe_allow_html=True)
         
