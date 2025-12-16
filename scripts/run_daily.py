@@ -83,12 +83,69 @@ def main():
     # Run daily analysis
     report = engine.run_daily(run_date)
     
-    # Print summary
-    print(f"Regime: {report.regime.regime.value} ({report.regime.confidence:.0%})")
-    print(f"Edges Found: {len(report.edges)}")
-    print(f"Trade Candidates: {len(report.candidates)}")
+    # Get enabled symbols for display
+    enabled_symbols = engine.get_enabled_symbols()
+    
+    print()
+    print("=" * 60)
+    print("                     RUN SUMMARY")
+    print("=" * 60)
     print()
     
+    # Regime
+    print(f"📊 REGIME: {report.regime.regime.value.upper()} ({report.regime.confidence:.0%} confidence)")
+    print(f"   {report.regime.rationale}")
+    print()
+    
+    # Universe Summary
+    symbols_with_edges = list(set(e.symbol for e in report.edges))
+    symbols_with_trades = list(set(c.symbol for c in report.candidates if c.recommendation == 'TRADE'))
+    
+    print(f"🔍 UNIVERSE: {len(enabled_symbols)} symbols scanned")
+    print(f"   Edges Found: {len(report.edges)} across {len(symbols_with_edges)} symbols")
+    print(f"   Trade Candidates: {len(symbols_with_trades)} symbols")
+    print()
+    
+    # Symbol-by-Symbol Breakdown
+    print("📋 SYMBOL BREAKDOWN:")
+    print("-" * 60)
+    print(f"{'SYMBOL':<8} {'EDGE':<12} {'STRENGTH':<10} {'OUTCOME':<15} {'REASON':<15}")
+    print("-" * 60)
+    
+    for symbol in enabled_symbols:
+        # Find edges for this symbol
+        sym_edges = [e for e in report.edges if e.symbol == symbol]
+        sym_candidates = [c for c in report.candidates if c.symbol == symbol]
+        
+        if not sym_edges:
+            print(f"{symbol:<8} {'--':<12} {'--':<10} {'NO EDGE':<15}")
+            continue
+        
+        for i, edge in enumerate(sym_edges):
+            edge_type = edge.edge_type.value if hasattr(edge.edge_type, 'value') else str(edge.edge_type)
+            strength = f"{edge.strength:.0%}"
+            
+            # Find candidate for this edge
+            matching_candidates = [c for c in sym_candidates if c.edge.edge_type == edge.edge_type]
+            
+            if matching_candidates:
+                cand = matching_candidates[0]
+                outcome = cand.recommendation
+                # Get failure reason for PASS
+                if outcome == 'PASS':
+                    reason = cand.validation_messages[0][:15] if cand.validation_messages else "structure fail"
+                else:
+                    reason = ""
+            else:
+                outcome = "NO STRUCTURE"
+                reason = ""
+            
+            print(f"{symbol:<8} {edge_type:<12} {strength:<10} {outcome:<15} {reason}")
+    
+    print("-" * 60)
+    print()
+    
+    # Trading Status
     if not report.trading_allowed:
         print("⛔ TRADING BLOCKED")
         for reason in report.do_not_trade_reasons:
