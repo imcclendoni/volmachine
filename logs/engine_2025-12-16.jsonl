@@ -342,3 +342,11 @@
 {"timestamp": "2025-12-16T13:38:34.156923", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
 {"timestamp": "2025-12-16T13:38:34.269600", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
 {"timestamp": "2025-12-16T13:38:51.585869", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
+{"timestamp": "2025-12-16T13:40:06.648822", "level": "INFO", "event": "provider_connected", "data": {"provider": "PolygonProvider"}}
+{"timestamp": "2025-12-16T13:40:06.649003", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T13:40:06.759253", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
+{"timestamp": "2025-12-16T13:40:29.655461", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
+{"timestamp": "2025-12-16T13:45:57.360345", "level": "INFO", "event": "provider_connected", "data": {"provider": "PolygonProvider"}}
+{"timestamp": "2025-12-16T13:45:57.360442", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T13:45:57.505673", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
+{"timestamp": "2025-12-16T13:46:24.098829", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}

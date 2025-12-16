@@ -426,18 +426,45 @@ class PolygonProvider(DataProvider):
                 else:
                     quote_timestamp = datetime.now()
                 
+                # Get quote data
+                # NOTE: Polygon basic plan doesn't include real-time bid/ask quotes
+                # Only day OHLCV is available. We synthesize bid/ask from close price.
+                last_quote = details.get('last_quote', {})
+                last_trade = details.get('last_trade', {})
+                day = details.get('day', {})
+                
+                # Try real quotes first (higher tier plans)
+                bid = last_quote.get('bid', 0) or 0
+                ask = last_quote.get('ask', 0) or 0
+                
+                # last/mid price from close or vwap
+                mid_price = day.get('close', 0) or day.get('vwap', 0) or last_trade.get('price', 0) or 0
+                
+                # FALLBACK: If no bid/ask, synthesize from mid price with assumed spread
+                # This allows edge detection to work with end-of-day data
+                if bid == 0 and ask == 0 and mid_price > 0:
+                    # Assume 5% total spread (2.5% each side) - conservative for options
+                    half_spread_pct = 0.025
+                    bid = mid_price * (1 - half_spread_pct)
+                    ask = mid_price * (1 + half_spread_pct)
+                    # Log that we synthesized quotes
+                    logger.debug(f"Synthesized quotes for {contract_symbol}: mid={mid_price:.2f} -> bid={bid:.2f}/ask={ask:.2f}")
+                
+                # volume from day data
+                volume = day.get('volume', 0) or 0
+                
                 contract = OptionContract(
                     symbol=symbol,
                     contract_symbol=contract_symbol,
                     option_type=OptionType.CALL if meta.get('contract_type') == 'call' else OptionType.PUT,
                     strike=meta.get('strike_price'),
                     expiration=exp_date,
-                    bid=day.get('bid', 0) or 0,
-                    ask=day.get('ask', 0) or 0,
-                    last=day.get('last', 0),
+                    bid=bid,
+                    ask=ask,
+                    last=mid_price,
                     iv=details.get('implied_volatility'),
                     greeks=greeks,
-                    volume=day.get('volume', 0) or 0,
+                    volume=volume,
                     open_interest=details.get('open_interest', 0) or 0,
                     quote_time=quote_timestamp,
                 )
