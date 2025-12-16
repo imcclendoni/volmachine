@@ -425,6 +425,23 @@ def main():
                 render_terminal(terminal_placeholder, st.session_state['terminal_logs'])
                 time.sleep(1)
                 st.rerun()
+    
+    # FULL LOG ACCESS (after terminal)
+    if st.session_state['terminal_logs'] and len(st.session_state['terminal_logs']) > 3:
+        log_col1, log_col2 = st.columns([3, 1])
+        with log_col1:
+            with st.expander("📜 VIEW FULL RUN LOG", expanded=False):
+                full_log = "\n".join(st.session_state['terminal_logs'])
+                st.code(full_log, language="text")
+        with log_col2:
+            log_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            full_log = "\n".join(st.session_state['terminal_logs'])
+            st.download_button(
+                label="⬇️ DOWNLOAD LOG",
+                data=full_log,
+                file_name=f"volmachine_run_{log_timestamp}.txt",
+                mime="text/plain",
+            )
 
     # DATA LOAD
     report = load_latest_report()
