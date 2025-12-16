@@ -665,6 +665,19 @@ def render_trade_ticket(candidate: dict):
         debit = structure.get('entry_debit_dollars', 0)
         max_loss = structure.get('max_loss_dollars', 0)
         max_profit = structure.get('max_profit_dollars', 0)
+        struct_type = structure.get('type', '')
+        
+        # Fallback computation for max_profit if missing
+        if max_profit == 0 and struct_type in ['debit_spread', 'DEBIT_SPREAD']:
+            legs = structure.get('legs', [])
+            if legs:
+                strikes = [l.get('strike', 0) for l in legs]
+                width_points = abs(max(strikes) - min(strikes)) if len(strikes) >= 2 else 0
+                debit_points = debit / 100 if debit else 0
+                max_profit = (width_points - debit_points) * 100  # Convert to dollars
+        elif max_profit == 0 and struct_type in ['credit_spread', 'CREDIT_SPREAD']:
+            # For credit spreads, max profit = credit received
+            max_profit = credit
         
         m1, m2 = st.columns(2)
         if credit > 0:

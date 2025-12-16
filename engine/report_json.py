@@ -170,6 +170,7 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
             'max_loss_points': float(structure.max_loss or 0.0) if structure else 0.0,
             'max_loss_dollars': float(structure.max_loss_dollars or 0.0) if structure else 0.0,
             'max_profit_points': float(structure.max_profit or 0.0) if structure else 0.0,
+            'max_profit_dollars': float(structure.max_profit_dollars or 0.0) if structure else 0.0,
             'breakevens': structure.breakevens if structure else [],
         } if structure else None,
         
