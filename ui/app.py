@@ -600,57 +600,46 @@ def render_trade_ticket(candidate: dict):
     # Build plain English description
     if struct_type in ['debit_spread', 'DEBIT_SPREAD']:
         trade_type = "PUT SPREAD (BEARISH)"
-        action_word = "Pay"
         cost_value = debit
-        simple_explain = f"You pay ${debit:.0f} upfront. You make money if {symbol} goes DOWN."
+        simple_explain = f"You pay ${debit:.0f} upfront. You make money if {symbol} drops."
     else:
         trade_type = "PUT SPREAD (NEUTRAL)"
-        action_word = "Collect"
         cost_value = credit
-        simple_explain = f"You collect ${credit:.0f} upfront. You keep it if {symbol} stays flat or goes UP."
+        simple_explain = f"You collect ${credit:.0f} upfront. You keep it if {symbol} stays flat or rises."
     
-    # Get expiration in readable format
+    # Get expiration
     exp = structure.get('expiration', '')
     dte = structure.get('dte', 0)
+    return_pct = ((max_profit/max_loss)*100) if max_loss > 0 else 0
+    return_mult = max_profit/cost_value if cost_value > 0 else 0
     
-    st.markdown(f"""
-    <div style="background: linear-gradient(135deg, rgba(16,185,129,0.1), rgba(56,189,248,0.08)); border: 2px solid rgba(16,185,129,0.4); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
-            <div style="font-size: 24px; font-weight: bold; color: #f8fafc;">
-                {symbol} {trade_type}
-            </div>
-            <div style="background: rgba(16,185,129,0.2); border: 1px solid #10b981; color: #10b981; padding: 4px 12px; border-radius: 4px; font-weight: bold;">
-                READY TO TRADE
-            </div>
-        </div>
-        
-        <div style="font-size: 16px; color: #cbd5e1; margin-bottom: 16px;">
-            {simple_explain}
-        </div>
-        
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; text-align: center;">
-            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
-                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Your Cost</div>
-                <div style="color: #f59e0b; font-size: 24px; font-weight: bold;">${cost_value:.0f}</div>
-            </div>
-            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
-                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Max You Can Make</div>
-                <div style="color: #10b981; font-size: 24px; font-weight: bold;">${max_profit:.0f}</div>
-            </div>
-            <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px;">
-                <div style="color: #64748b; font-size: 11px; text-transform: uppercase;">Max You Can Lose</div>
-                <div style="color: #ef4444; font-size: 24px; font-weight: bold;">${max_loss:.0f}</div>
-            </div>
-        </div>
-        
-        <div style="margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.1);">
-            <span style="color: #64748b; font-size: 11px;">EXPIRES:</span>
-            <span style="color: #f8fafc; font-size: 12px; margin-left: 4px;">{exp} ({dte} days)</span>
-            <span style="color: #64748b; font-size: 11px; margin-left: 16px;">RETURN POTENTIAL:</span>
-            <span style="color: #10b981; font-size: 12px; margin-left: 4px;">{((max_profit/max_loss)*100) if max_loss > 0 else 0:.0f}% ({max_profit/cost_value if cost_value > 0 else 0:.1f}x)</span>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # --- HEADER ROW ---
+    header_col1, header_col2 = st.columns([3, 1])
+    with header_col1:
+        st.subheader(f"🎯 {symbol} {trade_type}")
+    with header_col2:
+        st.success("✅ READY")
+    
+    # --- SIMPLE EXPLANATION ---
+    st.info(f"💡 {simple_explain}")
+    
+    # --- KEY NUMBERS (3 columns) ---
+    num_col1, num_col2, num_col3 = st.columns(3)
+    with num_col1:
+        st.metric("💵 Your Cost", f"${cost_value:.0f}")
+    with num_col2:
+        st.metric("📈 Max Profit", f"${max_profit:.0f}", delta=f"{return_pct:.0f}% return")
+    with num_col3:
+        st.metric("📉 Max Loss", f"${max_loss:.0f}")
+    
+    # --- EXPIRATION ROW ---
+    exp_col1, exp_col2 = st.columns(2)
+    with exp_col1:
+        st.caption(f"⏰ Expires: {exp} ({dte} days)")
+    with exp_col2:
+        st.caption(f"🎲 Return potential: {return_mult:.1f}x")
+    
+    st.divider()
     
     st.markdown('<div class="trade-body">', unsafe_allow_html=True)
     
