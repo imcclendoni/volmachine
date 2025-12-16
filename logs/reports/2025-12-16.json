@@ -1,12 +1,12 @@
 {
   "report_date": "2025-12-16",
-  "generated_at": "2025-12-16T14:07:35.934569",
+  "generated_at": "2025-12-16T14:22:00.426641",
   "trading_allowed": true,
   "do_not_trade_reasons": [],
   "regime": {
     "state": "chop",
-    "confidence": 0.5,
-    "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"
+    "confidence": 0.3,
+    "rationale": "No data provider - defaulting to CHOP"
   },
   "edges": [],
   "candidates": [],

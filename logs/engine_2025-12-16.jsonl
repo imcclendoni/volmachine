@@ -358,3 +358,11 @@
 {"timestamp": "2025-12-16T14:07:16.889126", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
 {"timestamp": "2025-12-16T14:07:16.994377", "level": "INFO", "event": "regime_classified", "data": {"regime": "chop", "confidence": 0.5, "rationale": "Regime: chop (score: 2.5). Near highs (3d); Price near MA50; MAs converging; Low returns, elevated vol"}}
 {"timestamp": "2025-12-16T14:07:35.933319", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
+{"timestamp": "2025-12-16T14:20:34.317389", "level": "WARNING", "event": "provider_init_failed", "data": {"error": "Polygon API key not provided"}}
+{"timestamp": "2025-12-16T14:20:34.318706", "level": "ERROR", "event": "no_provider_configured"}
+{"timestamp": "2025-12-16T14:20:34.318760", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T14:20:34.318888", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
+{"timestamp": "2025-12-16T14:22:00.424443", "level": "WARNING", "event": "provider_init_failed", "data": {"error": "Polygon API key not provided"}}
+{"timestamp": "2025-12-16T14:22:00.425963", "level": "ERROR", "event": "no_provider_configured"}
+{"timestamp": "2025-12-16T14:22:00.426030", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
+{"timestamp": "2025-12-16T14:22:00.426170", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
