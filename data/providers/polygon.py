@@ -194,6 +194,7 @@ class PolygonProvider(DataProvider):
         # Get snapshots for quotes and Greeks
         contracts = []
         expirations_set = set()
+        chain_timestamp = datetime.now()  # Will be updated if API provides
         
         for meta in contracts_meta:
             contract_symbol = meta.get('ticker')
@@ -219,6 +220,18 @@ class PolygonProvider(DataProvider):
                         vega=greeks_data.get('vega', 0),
                     )
                 
+                # Use API timestamp if available, not datetime.now()
+                # last_updated is in nanoseconds
+                quote_timestamp = None
+                if details.get('last_updated'):
+                    try:
+                        quote_timestamp = datetime.fromtimestamp(details['last_updated'] / 1e9)
+                        chain_timestamp = quote_timestamp  # Update chain timestamp
+                    except (ValueError, OSError):
+                        quote_timestamp = datetime.now()
+                else:
+                    quote_timestamp = datetime.now()
+                
                 contract = OptionContract(
                     symbol=symbol,
                     contract_symbol=contract_symbol,
@@ -232,7 +245,7 @@ class PolygonProvider(DataProvider):
                     greeks=greeks,
                     volume=day.get('volume', 0) or 0,
                     open_interest=details.get('open_interest', 0) or 0,
-                    quote_time=datetime.now(),
+                    quote_time=quote_timestamp,
                 )
                 contracts.append(contract)
                 
@@ -243,7 +256,7 @@ class PolygonProvider(DataProvider):
         return OptionChain(
             symbol=symbol,
             underlying_price=underlying_price,
-            timestamp=datetime.now(),
+            timestamp=chain_timestamp,
             expirations=sorted(expirations_set),
             contracts=contracts
         )

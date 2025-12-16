@@ -126,18 +126,17 @@ def generate_trade_ticket(
             description=description,
         ))
     
-    # Calculate net price
+    # Calculate net price (all in DOLLARS)
     net_credit = None
     net_debit = None
+    limit_price = None
     
     if structure.entry_credit:
         net_credit = structure.entry_credit * 100  # Points to dollars
-        limit_price = structure.entry_credit  # Credit as positive
+        limit_price = structure.entry_credit * 100  # Dollars
     elif structure.entry_debit:
-        net_debit = structure.entry_debit * 100
-        limit_price = structure.entry_debit  # Debit as positive
-    else:
-        limit_price = None
+        net_debit = structure.entry_debit * 100  # Points to dollars
+        limit_price = structure.entry_debit * 100  # Dollars
     
     # Max loss/profit in dollars
     max_loss = (structure.max_loss or 0) * 100 * candidate.recommended_contracts

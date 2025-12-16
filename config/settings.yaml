@@ -4,7 +4,7 @@
 
 # Account Configuration
 account:
-  equity: 100000  # Account equity in USD (update manually)
+  equity: 10000  # Paper trading equity - ADJUST TO YOUR ACTUAL AMOUNT
   timezone: "America/Chicago"
 
 # Market Parameters
