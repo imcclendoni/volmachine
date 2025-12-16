@@ -26,7 +26,16 @@ class PolygonProvider(DataProvider):
     
     def __init__(self, config: dict):
         super().__init__(config)
-        self.api_key = config.get('api_key') or os.environ.get('POLYGON_API_KEY')
+        
+        # Handle ${ENV_VAR} syntax from YAML config
+        api_key = config.get('api_key', '')
+        if api_key.startswith('${') and api_key.endswith('}'):
+            # Extract env var name and look it up
+            env_var_name = api_key[2:-1]
+            api_key = os.environ.get(env_var_name, '')
+        
+        # Fallback to direct env var
+        self.api_key = api_key or os.environ.get('POLYGON_API_KEY')
         self.base_url = config.get('base_url', 'https://api.polygon.io')
         self._session: Optional[requests.Session] = None
         
@@ -36,15 +45,13 @@ class PolygonProvider(DataProvider):
     def connect(self) -> bool:
         """Establish connection by validating API key."""
         self._session = requests.Session()
-        self._session.headers.update({
-            'Authorization': f'Bearer {self.api_key}'
-        })
+        # Polygon uses apiKey query parameter, not Bearer token
         
         # Validate API key with a simple request
         try:
             response = self._session.get(
                 f"{self.base_url}/v3/reference/tickers",
-                params={'limit': 1}
+                params={'limit': 1, 'apiKey': self.api_key}
             )
             if response.status_code == 200:
                 self._connected = True
@@ -67,6 +74,11 @@ class PolygonProvider(DataProvider):
         """Make authenticated request to Polygon API."""
         if not self._session:
             raise DataProviderError("Not connected to Polygon")
+        
+        # Add apiKey to all requests
+        if params is None:
+            params = {}
+        params['apiKey'] = self.api_key
         
         url = f"{self.base_url}{endpoint}"
         response = self._session.get(url, params=params)
