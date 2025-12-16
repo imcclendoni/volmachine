@@ -327,7 +327,9 @@ def render_trade_ticket(candidate: dict):
     structure = candidate.get('structure') or {}
     edge = candidate.get('edge') or {}
     sizing = candidate.get('sizing') or {}
+    candidate_id = candidate.get('id', symbol)
     
+    # TRADE READY (PAPER) header with warning
     st.markdown(f"""
     <div class="trade-card">
         <div class="trade-header">
@@ -335,7 +337,12 @@ def render_trade_ticket(candidate: dict):
                 <span style="color:#00f2ea">⚡</span> {symbol}
                 <span class="trade-tag">{edge.get('type','').upper()}</span>
                 <span class="trade-tag" style="border-color: #10b981; color: #10b981">TRADE</span>
+                <span class="trade-tag" style="border-color: #f59e0b; color: #f59e0b; background: rgba(245,158,11,0.1)">📋 PAPER</span>
             </div>
+        </div>
+        <div style="background: rgba(245,158,11,0.1); border: 1px solid #f59e0b; border-radius: 4px; padding: 8px; margin-bottom: 12px;">
+            <span style="color: #f59e0b; font-weight: bold;">⚠️ PAPER MODE</span>
+            <span style="color: #94a3b8; font-size: 11px; margin-left: 8px;">Awaiting manual confirmation</span>
         </div>
         <div class="trade-body">
     """, unsafe_allow_html=True)
@@ -380,11 +387,50 @@ def render_trade_ticket(candidate: dict):
         """, unsafe_allow_html=True)
         
     with col2:
-        st.markdown('<div style="color: #94a3b8; font-size: 11px; margin-bottom: 8px;">ANALYSIS</div>', unsafe_allow_html=True)
-        st.info(edge.get('rationale', 'Edge detected via volatility surface analysis.'))
-        st.caption("Risk Checks Passed ✅")
-
+        st.markdown('<div style="color: #94a3b8; font-size: 11px; margin-bottom: 8px;">EXECUTION METRICS</div>', unsafe_allow_html=True)
+        
+        # Show execution metrics
+        credit = structure.get('entry_credit_dollars', 0)
+        max_loss = structure.get('max_loss_dollars', 0)
+        pop = candidate.get('probability_metrics', {}).get('pop_expiry', 0) if candidate.get('probability_metrics') else 0
+        
+        m1, m2 = st.columns(2)
+        m1.metric("💰 Credit", f"${credit:.0f}" if credit else "N/A")
+        m2.metric("📉 Max Loss", f"${max_loss:.0f}" if max_loss else "N/A")
+        
+        m3, m4 = st.columns(2)
+        m3.metric("📊 P(Profit)", f"{pop:.0%}" if pop else "N/A")
+        m4.metric("📋 Mode", "PAPER")
+        
+        st.markdown('<div style="margin-top: 8px;"></div>', unsafe_allow_html=True)
+        st.info(edge.get('rationale', 'Edge detected via volatility surface analysis.')[:100])
+        
+    # Manual confirmation section
     st.markdown("</div></div>", unsafe_allow_html=True)
+    
+    # Initialize execution state
+    if 'confirmed_trades' not in st.session_state:
+        st.session_state['confirmed_trades'] = set()
+    
+    is_confirmed = candidate_id in st.session_state['confirmed_trades']
+    
+    confirm_col1, confirm_col2 = st.columns([2, 1])
+    
+    with confirm_col1:
+        if is_confirmed:
+            st.success("✅ Trade confirmed - ready for manual execution")
+        else:
+            st.warning("⚠️ Manual confirmation required before execution")
+    
+    with confirm_col2:
+        if is_confirmed:
+            if st.button("❌ Cancel", key=f"cancel_{candidate_id}"):
+                st.session_state['confirmed_trades'].discard(candidate_id)
+                st.rerun()
+        else:
+            if st.button("✅ CONFIRM TRADE", key=f"confirm_{candidate_id}", type="primary"):
+                st.session_state['confirmed_trades'].add(candidate_id)
+                st.rerun()
 
 
 def main():
