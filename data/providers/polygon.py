@@ -343,14 +343,23 @@ class PolygonProvider(DataProvider):
                 day = details.get('day', {})
                 greeks_data = details.get('greeks', {})
                 
-                # Build Greeks if available
+                # Build Greeks if available - clamp values for numerical noise
                 greeks = None
                 if greeks_data:
+                    # Clamp to handle slight numerical noise from Polygon
+                    delta = greeks_data.get('delta', 0)
+                    gamma = max(greeks_data.get('gamma', 0), 0)  # Must be >= 0
+                    theta = greeks_data.get('theta', 0)  # Can be negative
+                    vega = max(greeks_data.get('vega', 0), 0)  # Must be >= 0
+                    
+                    # Clamp delta to [-1, 1]
+                    delta = max(-1, min(1, delta))
+                    
                     greeks = Greeks(
-                        delta=greeks_data.get('delta', 0),
-                        gamma=greeks_data.get('gamma', 0),
-                        theta=greeks_data.get('theta', 0),
-                        vega=greeks_data.get('vega', 0),
+                        delta=delta,
+                        gamma=gamma,
+                        theta=theta,
+                        vega=vega,
                     )
                 
                 # Use API timestamp if available

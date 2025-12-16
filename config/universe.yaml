@@ -33,7 +33,7 @@ symbols:
     name: "S&P 500 ETF"
     type: "etf"
     tier: 1
-    enabled: true
+    enabled: false  # Disabled for focused testing
     min_volume: 1000
     min_open_interest: 5000
     max_bid_ask_pct: 1.5
@@ -57,7 +57,7 @@ symbols:
     name: "Russell 2000 ETF"
     type: "etf"
     tier: 1
-    enabled: true
+    enabled: false  # Disabled for focused testing
     min_volume: 300
     min_open_interest: 1500
     max_bid_ask_pct: 2.5
