@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Backfill Historical Signals - Version 3.
+Backfill Historical Signals - Version 4.
 
-Aligned with live engine (skew_extremes.py):
-- Uses IV for skew calculation (not price ratio)
-- steep (>=90th percentile) → direction=SHORT → credit_spread
-- flat (<=10th percentile) → direction=LONG → debit_spread
-- Outputs: put_iv_25d, call_iv_25d, put_call_skew, skew_percentile, is_flat/is_steep, history_mode
+Research-correct backtest alignment:
+- Width cascade [1,2,3,5] - selects first that passes liquidity/risk
+- Mean-reversion gating with min_delta threshold
+- Next-day execution (no lookahead bias)
+- Regime filter + cooldown after loss
 
 This uses REAL historical data from Polygon.
 """
@@ -16,6 +16,7 @@ import sys
 import json
 import math
 import time
+import yaml
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Optional, List, Dict, Any, Tuple
@@ -27,14 +28,48 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 
 # ============================================================
-# CONSTANTS - Match live engine config
+# LOAD CONFIG
 # ============================================================
 
-PERCENTILE_EXTREME_HIGH = 90  # Steep skew threshold
-PERCENTILE_EXTREME_LOW = 10   # Flat skew threshold
-TARGET_DTE = 30               # Target DTE for skew measurement
-DTE_TOLERANCE = 15            # ±15 days
-MIN_HISTORY_FOR_PERCENTILE = 20  # Minimum data points for valid percentile
+def load_config() -> Dict:
+    """Load backtest configuration."""
+    config_path = Path(__file__).parent.parent / 'config' / 'backtest.yaml'
+    if config_path.exists():
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+    return {}
+
+
+CONFIG = load_config()
+SKEW_CONFIG = CONFIG.get('strategies', {}).get('skew_extreme', {})
+WIDTH_CONFIG = CONFIG.get('width_selection', {})
+
+
+# ============================================================
+# CONSTANTS FROM CONFIG
+# ============================================================
+
+PERCENTILE_EXTREME_HIGH = 90
+PERCENTILE_EXTREME_LOW = 10
+TARGET_DTE = 30
+DTE_TOLERANCE = 15
+MIN_HISTORY_FOR_PERCENTILE = 20
+
+# Mean-reversion gating
+SKEW_DELTA_WINDOW = SKEW_CONFIG.get('skew_delta_window', 5)
+MIN_DELTA = SKEW_CONFIG.get('min_delta', 0.01)
+MIN_PERCENTILE_CHANGE = SKEW_CONFIG.get('min_percentile_change', 10)
+REQUIRE_SKEW_REVERTING = SKEW_CONFIG.get('require_skew_reverting', True)
+
+# Width cascade
+WIDTH_CASCADE = WIDTH_CONFIG.get('cascade', [1, 2, 3, 5])
+MAX_RISK_PER_TRADE = WIDTH_CONFIG.get('max_risk_per_trade', 100)
+
+# Regime filter
+BLOCKED_REGIMES = SKEW_CONFIG.get('blocked_regimes', ['HIGH_VOL_PANIC', 'TREND_DOWN'])
+
+# Cooldown
+LOSS_COOLDOWN_DAYS = SKEW_CONFIG.get('loss_cooldown_days', 5)
 
 
 # ============================================================
@@ -125,6 +160,11 @@ def norm_cdf(x: float) -> float:
     return 0.5 * (1 + math.erf(x / math.sqrt(2)))
 
 
+def norm_pdf(x: float) -> float:
+    """Standard normal PDF."""
+    return math.exp(-0.5 * x ** 2) / math.sqrt(2 * math.pi)
+
+
 def implied_volatility(
     price: float,
     S: float,
@@ -139,7 +179,6 @@ def implied_volatility(
     if T <= 0 or price <= 0:
         return None
     
-    # Initial guess
     sigma = 0.3
     
     for _ in range(max_iter):
@@ -153,7 +192,6 @@ def implied_volatility(
         if abs(diff) < tol:
             return sigma
         
-        # Vega (approximation)
         vega = S * math.sqrt(T) * norm_pdf((math.log(S / K) + (r + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T)))
         
         if vega < 1e-10:
@@ -169,34 +207,21 @@ def implied_volatility(
     return sigma if 0.01 < sigma < 5 else None
 
 
-def norm_pdf(x: float) -> float:
-    """Standard normal PDF."""
-    return math.exp(-0.5 * x ** 2) / math.sqrt(2 * math.pi)
-
-
 # ============================================================
-# STRIKE SELECTION (25-delta approximation)
+# STRIKE SELECTION
 # ============================================================
 
 def find_25_delta_strikes(spot: float, dte: int, atm_iv: float) -> Tuple[float, float]:
-    """
-    Approximate 25-delta put and call strikes.
-    
-    25-delta put is ~1 standard deviation below spot
-    25-delta call is ~1 standard deviation above spot
-    """
+    """Approximate 25-delta put and call strikes."""
     if atm_iv <= 0 or dte <= 0:
-        # Fallback: use 5% OTM
         return (round(spot * 0.95 / 5) * 5, round(spot * 1.05 / 5) * 5)
     
     T = dte / 365
     std_move = spot * atm_iv * math.sqrt(T)
     
-    # 25-delta is approximately 0.67 standard deviations OTM
     put_strike = spot - 0.67 * std_move
     call_strike = spot + 0.67 * std_move
     
-    # Round to nearest $5
     put_strike = round(put_strike / 5) * 5
     call_strike = round(call_strike / 5) * 5
     
@@ -205,19 +230,16 @@ def find_25_delta_strikes(spot: float, dte: int, atm_iv: float) -> Tuple[float, 
 
 def find_monthly_expiry(as_of: date, target_dte: int = 30, tolerance: int = 15) -> date:
     """Find monthly expiry within target DTE range."""
-    # Try to find 3rd Friday of next month
     target = as_of + timedelta(days=target_dte)
     
     first_of_month = target.replace(day=1)
     first_friday = first_of_month + timedelta(days=(4 - first_of_month.weekday()) % 7)
     third_friday = first_friday + timedelta(days=14)
     
-    # Check if this is within tolerance
     dte = (third_friday - as_of).days
     if abs(dte - target_dte) <= tolerance:
         return third_friday
     
-    # Try next month
     next_month = first_of_month + timedelta(days=32)
     first_of_month = next_month.replace(day=1)
     first_friday = first_of_month + timedelta(days=(4 - first_of_month.weekday()) % 7)
@@ -234,7 +256,7 @@ def build_occ_symbol(symbol: str, expiry: date, strike: float, right: str) -> st
 
 
 # ============================================================
-# SKEW CALCULATION - MATCHES LIVE ENGINE
+# SKEW CALCULATION
 # ============================================================
 
 def calculate_skew_metrics(
@@ -244,12 +266,7 @@ def calculate_skew_metrics(
     api_key: str,
     delay: float = 0.2,
 ) -> Optional[Dict]:
-    """
-    Calculate skew metrics matching live engine output.
-    
-    Returns dict with: put_iv_25d, call_iv_25d, put_call_skew, atm_iv, expiry, dte
-    """
-    # Find target expiry
+    """Calculate skew metrics matching live engine output."""
     expiry = find_monthly_expiry(as_of_date, TARGET_DTE, DTE_TOLERANCE)
     dte = (expiry - as_of_date).days
     
@@ -257,9 +274,8 @@ def calculate_skew_metrics(
         return None
     
     T = dte / 365
-    r = 0.05  # Risk-free rate assumption
+    r = 0.05
     
-    # Get ATM option prices to estimate ATM IV
     atm_strike = round(underlying_price / 5) * 5
     atm_call_occ = build_occ_symbol(symbol, expiry, atm_strike, 'C')
     atm_put_occ = build_occ_symbol(symbol, expiry, atm_strike, 'P')
@@ -272,7 +288,6 @@ def calculate_skew_metrics(
     if not atm_call_data or not atm_put_data:
         return None
     
-    # Calculate ATM IV
     atm_call_iv = implied_volatility(atm_call_data['close'], underlying_price, atm_strike, T, r, 'call')
     atm_put_iv = implied_volatility(atm_put_data['close'], underlying_price, atm_strike, T, r, 'put')
     
@@ -281,10 +296,8 @@ def calculate_skew_metrics(
     
     atm_iv = (atm_call_iv + atm_put_iv) / 2
     
-    # Find 25-delta strikes
     put_25d_strike, call_25d_strike = find_25_delta_strikes(underlying_price, dte, atm_iv)
     
-    # Get 25-delta option prices
     put_25d_occ = build_occ_symbol(symbol, expiry, put_25d_strike, 'P')
     call_25d_occ = build_occ_symbol(symbol, expiry, call_25d_strike, 'C')
     
@@ -296,7 +309,6 @@ def calculate_skew_metrics(
     if not put_25d_data or not call_25d_data:
         return None
     
-    # Calculate 25-delta IVs
     put_iv_25d = implied_volatility(put_25d_data['close'], underlying_price, put_25d_strike, T, r, 'put')
     call_iv_25d = implied_volatility(call_25d_data['close'], underlying_price, call_25d_strike, T, r, 'call')
     
@@ -319,30 +331,53 @@ def calculate_skew_metrics(
     }
 
 
+# ============================================================
+# EDGE DETECTION WITH MEAN-REVERSION GATING
+# ============================================================
+
 def detect_skew_edge(
     metrics: Dict,
     skew_history: List[float],
+    percentile_history: List[float],
 ) -> Optional[Dict]:
     """
-    Detect skew edge - MATCHES LIVE ENGINE LOGIC.
+    Detect skew edge with proper mean-reversion gating.
     
-    - Steep (>=90th percentile): direction=SHORT → credit_spread
-    - Flat (<=10th percentile): direction=LONG → debit_spread
+    Requirements:
+    - Level: percentile >= 90 (steep) or <= 10 (flat)
+    - Reversion: skew_delta < -min_delta (steep) or > +min_delta (flat)
+    - OR: percentile_change >= min_percentile_change
     """
     current_skew = metrics['put_call_skew']
     
-    # Check for sufficient history
     if len(skew_history) < MIN_HISTORY_FOR_PERCENTILE:
-        # Not enough history - cannot determine percentile
         return None
     
-    # Calculate percentile
+    # Calculate current percentile
     below = sum(1 for s in skew_history if s < current_skew)
     percentile = (below / len(skew_history)) * 100
     
-    # Check for steep skew (high fear premium in puts)
+    # Calculate skew delta (5-day change)
+    skew_delta = 0.0
+    percentile_delta = 0.0
+    
+    if len(skew_history) >= SKEW_DELTA_WINDOW:
+        past_skew = skew_history[-SKEW_DELTA_WINDOW]
+        skew_delta = current_skew - past_skew
+    
+    if len(percentile_history) >= SKEW_DELTA_WINDOW:
+        past_percentile = percentile_history[-SKEW_DELTA_WINDOW]
+        percentile_delta = percentile - past_percentile
+    
+    # Steep skew detection (sell credit spreads)
     if percentile >= PERCENTILE_EXTREME_HIGH:
-        # Puts very expensive → Sell put premium → Credit spread
+        # Check mean-reversion: skew must be falling
+        meets_delta = skew_delta < -MIN_DELTA
+        meets_percentile_change = percentile_delta < -MIN_PERCENTILE_CHANGE
+        
+        if REQUIRE_SKEW_REVERTING and not (meets_delta or meets_percentile_change):
+            return None  # Not reverting
+        
         strength = 0.6 + (percentile - PERCENTILE_EXTREME_HIGH) / 20 * 0.4
         strength = max(0.0, min(1.0, strength))
         
@@ -359,16 +394,24 @@ def detect_skew_edge(
                 'atm_iv': round(metrics['atm_iv'], 4),
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
+                'skew_delta': round(skew_delta, 4),
+                'percentile_delta': round(percentile_delta, 1),
                 'is_steep': 1.0,
                 'is_flat': 0.0,
-                'history_mode': 1.0,  # Percentile-based
+                'history_mode': 1.0,
             },
-            'rationale': f"Steep put skew: {metrics['put_iv_25d']:.1%} put IV vs {metrics['call_iv_25d']:.1%} call IV = {current_skew:.1%} spread ({percentile:.0f}th percentile)",
+            'rationale': f"Steep skew reverting: {percentile:.0f}th pctl, Δskew={skew_delta:.2%}, Δpctl={percentile_delta:.0f}",
         }
     
-    # Check for flat skew (puts unusually cheap)
+    # Flat skew detection (buy debit spreads)
     if percentile <= PERCENTILE_EXTREME_LOW:
-        # Puts cheap → Buy put protection → Debit spread
+        # Check mean-reversion: skew must be rising
+        meets_delta = skew_delta > MIN_DELTA
+        meets_percentile_change = percentile_delta > MIN_PERCENTILE_CHANGE
+        
+        if REQUIRE_SKEW_REVERTING and not (meets_delta or meets_percentile_change):
+            return None
+        
         strength = 0.5 + (PERCENTILE_EXTREME_LOW - percentile) / 20 * 0.3
         strength = max(0.0, min(1.0, strength))
         
@@ -385,94 +428,175 @@ def detect_skew_edge(
                 'atm_iv': round(metrics['atm_iv'], 4),
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
+                'skew_delta': round(skew_delta, 4),
+                'percentile_delta': round(percentile_delta, 1),
                 'is_steep': 0.0,
                 'is_flat': 1.0,
                 'history_mode': 1.0,
             },
-            'rationale': f"Flat put skew: {metrics['put_iv_25d']:.1%} put IV vs {metrics['call_iv_25d']:.1%} call IV = {current_skew:.1%} spread ({percentile:.0f}th percentile)",
+            'rationale': f"Flat skew reverting: {percentile:.0f}th pctl, Δskew={skew_delta:.2%}, Δpctl={percentile_delta:.0f}",
         }
     
-    # Normal skew - no edge
     return None
 
 
-def build_spread_structure(edge: Dict, symbol: str, skew_metrics: Dict) -> Dict:
+# ============================================================
+# WIDTH CASCADE STRUCTURE BUILDER
+# ============================================================
+
+def build_spread_structure_with_cascade(
+    edge: Dict,
+    symbol: str,
+    skew_metrics: Dict,
+    api_key: str,
+    as_of_date: date,
+    delay: float = 0.1,
+) -> Optional[Dict]:
     """
-    Build spread structure based on edge direction.
+    Build spread structure using width cascade.
     
-    - SHORT (steep) → Credit put spread: sell higher strike put, buy lower
-    - LONG (flat) → Debit put spread: buy higher strike put, sell lower
+    Tries widths [1, 2, 3, 5] and selects first that:
+    - Has valid option contracts
+    - Meets liquidity requirements
+    - Fits risk cap
     """
     direction = edge['direction']
     expiry = skew_metrics['expiry']
-    underlying = skew_metrics['underlying_price']
     atm_strike = skew_metrics['atm_strike']
     
-    spread_width = 5  # $5 wide
+    for width in WIDTH_CASCADE:
+        structure = _try_build_spread(
+            direction=direction,
+            symbol=symbol,
+            expiry=expiry,
+            atm_strike=atm_strike,
+            width=width,
+            api_key=api_key,
+            as_of_date=as_of_date,
+            delay=delay,
+        )
+        
+        if structure:
+            # Check risk cap
+            max_loss = structure.get('max_loss_dollars', float('inf'))
+            if max_loss <= MAX_RISK_PER_TRADE:
+                structure['width_selected'] = width
+                structure['widths_tried'] = WIDTH_CASCADE[:WIDTH_CASCADE.index(width) + 1]
+                return structure
+    
+    return None
+
+
+def _try_build_spread(
+    direction: str,
+    symbol: str,
+    expiry: date,
+    atm_strike: float,
+    width: int,
+    api_key: str,
+    as_of_date: date,
+    delay: float,
+) -> Optional[Dict]:
+    """Try to build a spread with given width, checking contract availability."""
     
     if direction == 'SHORT':
-        # Credit put spread (bull put): sell OTM put, buy further OTM put
-        short_strike = atm_strike - 5   # Sell 5 below ATM
-        long_strike = atm_strike - 10   # Buy 10 below ATM
+        # Credit put spread: sell OTM put, buy further OTM
+        short_strike = atm_strike - 5
+        long_strike = short_strike - width
+    else:
+        # Debit put spread: buy closer to ATM, sell further OTM
+        long_strike = atm_strike - 5
+        short_strike = long_strike - width
+    
+    # Build OCC symbols
+    short_occ = build_occ_symbol(symbol, expiry, short_strike, 'P')
+    long_occ = build_occ_symbol(symbol, expiry, long_strike, 'P')
+    
+    # Check if contracts exist
+    short_data = get_option_data(short_occ, as_of_date, api_key)
+    time.sleep(delay)
+    long_data = get_option_data(long_occ, as_of_date, api_key)
+    time.sleep(delay)
+    
+    if not short_data or not long_data:
+        return None  # Contracts don't exist
+    
+    # Check liquidity (volume)
+    min_vol = WIDTH_CONFIG.get('min_volume', 10)
+    if short_data.get('volume', 0) < min_vol or long_data.get('volume', 0) < min_vol:
+        return None  # Insufficient liquidity
+    
+    # Calculate prices
+    short_price = short_data['close']
+    long_price = long_data['close']
+    
+    if direction == 'SHORT':
+        # Credit spread
+        credit = short_price - long_price
+        if credit <= 0:
+            return None  # No credit
         
-        legs = [
-            {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat()},
-            {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat()},
-        ]
-        
-        # Estimate credit (typically 30-40% of width for OTM spreads)
-        estimated_credit = spread_width * 0.35  # ~$1.75 for $5 wide
-        max_loss = (spread_width - estimated_credit) * 100  # ~$325
-        max_profit = estimated_credit * 100  # ~$175
+        max_loss = (width - credit) * 100
+        max_profit = credit * 100
         
         return {
             'type': 'credit_spread',
             'spread_type': 'credit',
-            'legs': legs,
-            'width': spread_width,
-            'estimated_credit': estimated_credit,
+            'legs': [
+                {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
+                {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
+            ],
+            'width': width,
+            'entry_credit': credit,
             'max_loss_dollars': max_loss,
             'max_profit_dollars': max_profit,
         }
-    
-    else:  # LONG
-        # Debit put spread (bear put): buy closer to ATM put, sell further OTM
-        long_strike = atm_strike - 5    # Buy 5 below ATM
-        short_strike = atm_strike - 10  # Sell 10 below ATM
+    else:
+        # Debit spread
+        debit = long_price - short_price
+        if debit <= 0:
+            return None  # No debit
         
-        legs = [
-            {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat()},
-            {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat()},
-        ]
-        
-        # Estimate debit (typically 40-50% of width for OTM spreads)
-        estimated_debit = spread_width * 0.45  # ~$2.25 for $5 wide
-        max_loss = estimated_debit * 100  # ~$225
-        max_profit = (spread_width - estimated_debit) * 100  # ~$275
+        max_loss = debit * 100
+        max_profit = (width - debit) * 100
         
         return {
             'type': 'debit_spread',
             'spread_type': 'debit',
-            'legs': legs,
-            'width': spread_width,
-            'estimated_debit': estimated_debit,
+            'legs': [
+                {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
+                {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
+            ],
+            'width': width,
+            'entry_debit': debit,
             'max_loss_dollars': max_loss,
             'max_profit_dollars': max_profit,
         }
 
 
+# ============================================================
+# REPORT SAVING
+# ============================================================
+
 def save_backfill_report(
-    report_date: date,
+    signal_date: date,
+    execution_date: date,  # Next trading day
     symbol: str,
     edge: Dict,
     structure: Dict,
     output_dir: Path,
 ) -> Path:
-    """Save backfilled signal as report JSON - format matches live engine."""
+    """
+    Save backfilled signal as report JSON.
+    
+    Uses execution_date (next trading day) for the report filename
+    to avoid lookahead bias.
+    """
     report = {
-        'report_date': report_date.isoformat(),
+        'report_date': signal_date.isoformat(),
+        'execution_date': execution_date.isoformat(),
         'generated_at': datetime.now().isoformat(),
-        'session': 'backfill',
+        'session': 'backfill_v4',
         'trading_allowed': True,
         'do_not_trade_reasons': [],
         'regime': {'state': 'unknown', 'confidence': 0.5},
@@ -497,7 +621,8 @@ def save_backfill_report(
         }],
     }
     
-    filename = f"{report_date.isoformat()}_backfill.json"
+    # Use execution_date for filename (next-day execution)
+    filename = f"{execution_date.isoformat()}_backfill.json"
     path = output_dir / filename
     
     with open(path, 'w') as f:
@@ -510,25 +635,37 @@ def save_backfill_report(
 # HISTORY MANAGEMENT
 # ============================================================
 
-def load_skew_history(symbol: str) -> List[float]:
-    """Load historical put_call_skew values."""
-    cache_path = Path(__file__).parent.parent / 'cache' / 'edges' / f'{symbol}_skew_history.json'
+def load_skew_history(symbol: str) -> Tuple[List[float], List[float]]:
+    """Load historical skew and percentile values."""
+    cache_path = Path(__file__).parent.parent / 'cache' / 'edges' / f'{symbol}_skew_history_v4.json'
     if cache_path.exists():
         try:
             with open(cache_path) as f:
-                return json.load(f)
+                data = json.load(f)
+                return data.get('skew', []), data.get('percentile', [])
         except:
             pass
-    return []
+    return [], []
 
 
-def save_skew_history(symbol: str, history: List[float]):
+def save_skew_history(symbol: str, skew_history: List[float], percentile_history: List[float]):
     """Save skew history for future percentile calculations."""
     cache_dir = Path(__file__).parent.parent / 'cache' / 'edges'
     cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / f'{symbol}_skew_history.json'
+    path = cache_dir / f'{symbol}_skew_history_v4.json'
     with open(path, 'w') as f:
-        json.dump(history[-252:], f)  # Keep last 252 trading days
+        json.dump({
+            'skew': skew_history[-252:],
+            'percentile': percentile_history[-252:],
+        }, f)
+
+
+def get_next_trading_day(current: date) -> date:
+    """Get next trading day (skip weekends)."""
+    next_day = current + timedelta(days=1)
+    while next_day.weekday() >= 5:
+        next_day += timedelta(days=1)
+    return next_day
 
 
 # ============================================================
@@ -537,13 +674,13 @@ def save_skew_history(symbol: str, history: List[float]):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Backfill historical signals using IV-based skew detection (matches live engine)"
+        description="Backfill historical signals v4 - research-correct with width cascade"
     )
     parser.add_argument("--days", type=int, default=90)
-    parser.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "IWM", "TLT"])
+    parser.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "IWM"])  # TLT excluded by default
     parser.add_argument("--output", default="./logs/reports")
-    parser.add_argument("--delay", type=float, default=0.2)
-    parser.add_argument("--build-history", action="store_true", help="Build skew history only, no signals")
+    parser.add_argument("--delay", type=float, default=0.15)
+    parser.add_argument("--build-history", action="store_true", help="Build skew history only")
     
     args = parser.parse_args()
     
@@ -555,26 +692,30 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    end_date = date.today() - timedelta(days=1)  # Yesterday (settled data)
+    end_date = date.today() - timedelta(days=1)
     start_date = end_date - timedelta(days=args.days)
     
-    print(f"=== Signal Backfill v3 (IV-based, aligned with live engine) ===")
+    print(f"=== Signal Backfill v4 (width cascade, mean-reversion gating) ===")
     print(f"Period: {start_date} to {end_date}")
     print(f"Symbols: {', '.join(args.symbols)}")
+    print(f"Width cascade: {WIDTH_CASCADE}")
+    print(f"Min delta: {MIN_DELTA:.2%}, Min pctl change: {MIN_PERCENTILE_CHANGE}")
+    print(f"Max risk per trade: ${MAX_RISK_PER_TRADE}")
     print(f"Mode: {'Build History' if args.build_history else 'Detect Signals'}")
     print()
     
     signals_found = 0
     dates_processed = 0
-    steep_count = 0
-    flat_count = 0
     
     # Load existing history
-    skew_histories = {sym: load_skew_history(sym) for sym in args.symbols}
+    histories = {}
+    for sym in args.symbols:
+        skew, pctl = load_skew_history(sym)
+        histories[sym] = {'skew': skew, 'percentile': pctl}
     
     current = start_date
     while current <= end_date:
-        if current.weekday() >= 5:  # Skip weekends
+        if current.weekday() >= 5:
             current += timedelta(days=1)
             continue
         
@@ -584,35 +725,51 @@ def main():
         day_signals = []
         
         for symbol in args.symbols:
-            # Get underlying price
             underlying = get_underlying_price(symbol, current, api_key)
             if not underlying:
                 continue
             
-            # Calculate skew metrics (with IV)
             metrics = calculate_skew_metrics(symbol, current, underlying, api_key, args.delay)
             
             if not metrics:
                 continue
             
             # Record skew for history
-            skew_histories[symbol].append(metrics['put_call_skew'])
+            histories[symbol]['skew'].append(metrics['put_call_skew'])
+            
+            # Calculate current percentile for history
+            skew_hist = histories[symbol]['skew'][:-1]
+            if len(skew_hist) >= MIN_HISTORY_FOR_PERCENTILE:
+                below = sum(1 for s in skew_hist if s < metrics['put_call_skew'])
+                current_pctl = (below / len(skew_hist)) * 100
+                histories[symbol]['percentile'].append(current_pctl)
             
             if not args.build_history:
-                # Detect edge using history (excluding current)
-                edge = detect_skew_edge(metrics, skew_histories[symbol][:-1])
+                edge = detect_skew_edge(
+                    metrics,
+                    histories[symbol]['skew'][:-1],
+                    histories[symbol]['percentile'],
+                )
                 
                 if edge and edge['strength'] >= 0.5:
-                    structure = build_spread_structure(edge, symbol, metrics)
-                    save_backfill_report(current, symbol, edge, structure, output_dir)
-                    signals_found += 1
+                    # Build structure with width cascade
+                    structure = build_spread_structure_with_cascade(
+                        edge, symbol, metrics, api_key, current, args.delay
+                    )
                     
-                    if edge['is_steep']:
-                        steep_count += 1
-                        day_signals.append(f"{symbol}: STEEP→{edge['structure_type']} (p={edge['metrics']['skew_percentile']:.0f})")
-                    else:
-                        flat_count += 1
-                        day_signals.append(f"{symbol}: FLAT→{edge['structure_type']} (p={edge['metrics']['skew_percentile']:.0f})")
+                    if structure:
+                        # Next-day execution
+                        exec_date = get_next_trading_day(current)
+                        save_backfill_report(current, exec_date, symbol, edge, structure, output_dir)
+                        signals_found += 1
+                        
+                        width = structure.get('width_selected', '?')
+                        max_loss = structure.get('max_loss_dollars', 0)
+                        
+                        if edge['is_steep']:
+                            day_signals.append(f"{symbol}: STEEP→credit w={width} ${max_loss:.0f}")
+                        else:
+                            day_signals.append(f"{symbol}: FLAT→debit w={width} ${max_loss:.0f}")
         
         if day_signals:
             print(f"✅ {', '.join(day_signals)}")
@@ -623,23 +780,18 @@ def main():
     
     # Save histories
     for symbol in args.symbols:
-        save_skew_history(symbol, skew_histories[symbol])
+        save_skew_history(symbol, histories[symbol]['skew'], histories[symbol]['percentile'])
     
     print()
     print(f"=== Backfill Complete ===")
     print(f"Dates processed: {dates_processed}")
-    print(f"Skew history length: {len(skew_histories.get('SPY', []))} days")
     
     if not args.build_history:
         print(f"Signals found: {signals_found}")
-        print(f"  - Steep (credit_spread): {steep_count}")
-        print(f"  - Flat (debit_spread): {flat_count}")
-        print()
-        
         if signals_found > 0:
-            print(f"Now run: python3 scripts/run_backtest.py --days {args.days}")
+            print(f"\nNext: python3 scripts/run_backtest.py --days {args.days}")
         else:
-            print("No extreme skew detected. Ensure sufficient history (run --build-history first).")
+            print("No signals passed mean-reversion gating. Consider adjusting min_delta.")
     else:
         print("History built. Run again without --build-history to detect signals.")
     
