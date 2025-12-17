@@ -605,6 +605,42 @@ def render_trade_card(candidate: dict):
         # Footer
         st.caption(f"⏰ {exp} ({dte} days) • 📊 {contracts} contracts")
         
+        # Advanced Details Expander (inside card)
+        with st.expander("📋 Trade Details", expanded=False):
+            # Legs
+            legs = structure.get('legs', [])
+            if legs:
+                st.markdown("**📊 Option Legs:**")
+                for leg in legs:
+                    action = leg.get('action', 'BUY')
+                    qty = leg.get('quantity', 1)
+                    strike = leg.get('strike', 0)
+                    opt_type = leg.get('option_type', 'P')
+                    leg_exp = leg.get('expiration', exp)
+                    st.code(f"{action} {qty} {symbol} {leg_exp} {strike} {opt_type}", language=None)
+            
+            # Breakeven
+            breakevens = structure.get('breakevens', [])
+            if breakevens:
+                be_str = ", ".join([f"${b:.2f}" for b in breakevens])
+                st.metric("🎯 Breakeven", be_str)
+            
+            # Risk Tiers
+            sizing = candidate.get('sizing') or {}
+            risk_tiers = sizing.get('risk_tiers', [])
+            if risk_tiers:
+                st.markdown("**📊 Risk Sizing:**")
+                tier_text = " | ".join([f"{t['risk_pct']:.0%}: {t['contracts']} ct (${t['debit']:.0f})" for t in risk_tiers[:4]])
+                st.caption(tier_text)
+            
+            # Edge Rationale
+            edge = candidate.get('edge') or {}
+            rationale = edge.get('rationale', {})
+            if rationale:
+                st.markdown("**💡 Why This Trade:**")
+                for key, val in rationale.items():
+                    st.caption(f"• {key}: {val}")
+        
         # Execute button (full width)
         can_execute = is_valid and contracts > 0
         
@@ -1232,16 +1268,6 @@ def main():
                     trade = trades[i + j]
                     with col:
                         render_trade_card(trade)
-        
-        # Optional: Show advanced details in expander
-        with st.expander("📋 Advanced Execution Details", expanded=False):
-            selected_symbol = st.selectbox(
-                "Select trade:",
-                [t['symbol'] for t in trades],
-                key="trade_detail_select"
-            )
-            selected_trade = next((t for t in trades if t['symbol'] == selected_symbol), trades[0])
-            render_trade_ticket(selected_trade)
     else:
         edges = report.get('edges', [])
         if edges:
