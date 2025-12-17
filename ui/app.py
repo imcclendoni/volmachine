@@ -527,8 +527,8 @@ def render_status_badges(candidate: dict, is_fallback: bool):
 
 def render_trade_card(candidate: dict):
     """
-    Render a compact trade card for grid display.
-    Shows key info in a contained card format with execute button.
+    Render a polished trade card for grid display.
+    Beautiful contained design with colored metrics.
     """
     symbol = candidate['symbol']
     structure = candidate.get('structure') or {}
@@ -573,43 +573,78 @@ def render_trade_card(candidate: dict):
         st.session_state['card_states'] = {}
     card_state = st.session_state['card_states'].get(card_key, 'ready')
     
-    # Card container
-    with st.container():
-        # Header
-        h1, h2 = st.columns([3, 1])
-        with h1:
-            st.markdown(f"### {symbol}")
-            st.caption(f"📉 {direction} • {edge_type}")
-        with h2:
-            if is_fallback:
-                st.error("⚠️ FALLBACK")
-            else:
-                st.success("✓ CONFIRMED")
+    # Colors
+    badge_color = "#ef4444" if is_fallback else "#10b981"
+    badge_bg = "rgba(239,68,68,0.15)" if is_fallback else "rgba(16,185,129,0.15)"
+    badge_text = "⚠️ FALLBACK" if is_fallback else "✓ CONFIRMED"
+    card_border = "#ef4444" if is_fallback else "#10b981"
+    
+    # Card container with border
+    st.markdown(f"""
+    <div style="
+        border: 2px solid {card_border};
+        border-radius: 16px;
+        padding: 20px;
+        background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%);
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        margin-bottom: 16px;
+    ">
+        <!-- Header -->
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
+            <div>
+                <div style="font-size: 28px; font-weight: 800; color: #f8fafc; letter-spacing: -1px;">{symbol}</div>
+                <div style="color: #64748b; font-size: 12px; margin-top: 4px;">📉 {direction} • {edge_type}</div>
+            </div>
+            <div style="
+                background: {badge_bg};
+                border: 1px solid {badge_color};
+                color: {badge_color};
+                padding: 6px 12px;
+                border-radius: 8px;
+                font-size: 11px;
+                font-weight: 600;
+            ">{badge_text}</div>
+        </div>
         
-        # Metrics row
-        m1, m2, m3, m4 = st.columns(4)
-        m1.metric("Cost", f"${cost:.0f}")
-        m2.metric("Profit", f"${max_profit:.0f}")
-        m3.metric("Loss", f"${max_loss:.0f}")
-        m4.metric("Return", f"{return_mult:.1f}x")
+        <!-- Metrics Grid -->
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;">
+            <div style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Cost</div>
+                <div style="color: #f59e0b; font-size: 22px; font-weight: 700;">${cost:.0f}</div>
+            </div>
+            <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Profit</div>
+                <div style="color: #10b981; font-size: 22px; font-weight: 700;">${max_profit:.0f}</div>
+            </div>
+            <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Loss</div>
+                <div style="color: #ef4444; font-size: 22px; font-weight: 700;">${max_loss:.0f}</div>
+            </div>
+            <div style="background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.3); border-radius: 8px; padding: 12px; text-align: center;">
+                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Return</div>
+                <div style="color: #38bdf8; font-size: 22px; font-weight: 700;">{return_mult:.1f}x</div>
+            </div>
+        </div>
         
-        # Footer row
-        st.caption(f"⏰ {exp} ({dte}d) • 📊 {contracts} contracts")
-        
-        # Execute button
-        can_execute = is_valid and contracts > 0
-        
-        if card_state == 'ready':
-            if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary"):
-                st.session_state['card_states'][card_key] = 'confirmed'
-                st.rerun()
-        elif card_state == 'confirmed':
-            st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
-            if st.button("↩️ Cancel", key=f"cancel_{candidate_id}"):
-                st.session_state['card_states'][card_key] = 'ready'
-                st.rerun()
-        
-        st.divider()
+        <!-- Footer -->
+        <div style="color: #64748b; font-size: 11px; margin-bottom: 12px;">
+            ⏰ {exp} ({dte} days) • 📊 {contracts} contracts
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Execute button (Streamlit native for interactivity)
+    can_execute = is_valid and contracts > 0
+    
+    if card_state == 'ready':
+        if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary", use_container_width=True):
+            st.session_state['card_states'][card_key] = 'confirmed'
+            st.rerun()
+    elif card_state == 'confirmed':
+        st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
+        if st.button("↩️ Cancel", key=f"cancel_{candidate_id}", use_container_width=True):
+            st.session_state['card_states'][card_key] = 'ready'
+            st.rerun()
 
 
 def render_trade_ticket(candidate: dict):
@@ -1077,34 +1112,57 @@ def main():
     
     # RISK STATUS
     with c1:
-        st.markdown("### 🛡️ RISK SYSTEMS")
         allowed = report.get('trading_allowed', True)
-        if allowed:
-            st.markdown("""
-            <div class="risk-allowed">
-                <div style="font-size: 2rem; color: #10b981; font-weight: 800; letter-spacing: 2px;">TRADING ALLOWED</div>
-                <div style="color: #6ee7b7; font-family: 'JetBrains Mono'; font-size: 12px; margin-top: 8px;">ALL SYSTEMS NOMINAL</div>
-                <div style="color: #059669; font-size: 3rem; position: absolute; right: 20px; top: 10px; opacity: 0.2">OK</div>
-            </div>
-            """, unsafe_allow_html=True)
-        else:
-            st.markdown("""
-            <div class="risk-blocked">
-                <div style="font-size: 2rem; color: #ef4444; font-weight: 800;">TRADING LOCKED</div>
-                <div style="color: #fca5a5; font-family: 'JetBrains Mono'; margin-top: 8px;">KILL SWITCH ACTIVE</div>
-            </div>
-            """, unsafe_allow_html=True)
+        risk_color = "#10b981" if allowed else "#ef4444"
+        risk_bg = "rgba(16,185,129,0.1)" if allowed else "rgba(239,68,68,0.1)"
+        risk_text = "TRADING ALLOWED" if allowed else "TRADING LOCKED"
+        risk_sub = "ALL SYSTEMS NOMINAL" if allowed else "KILL SWITCH ACTIVE"
+        risk_icon = "✓" if allowed else "✗"
+        
+        st.markdown(f"""
+        <div style="
+            border: 2px solid {risk_color};
+            border-radius: 16px;
+            padding: 24px;
+            background: linear-gradient(180deg, {risk_bg} 0%, rgba(15,23,42,0.95) 100%);
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        ">
+            <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">🛡️ RISK SYSTEMS</div>
+            <div style="font-size: 24px; color: {risk_color}; font-weight: 800; letter-spacing: 1px;">{risk_text}</div>
+            <div style="color: #94a3b8; font-size: 12px; margin-top: 8px;">{risk_sub}</div>
+            <div style="position: absolute; right: 16px; top: 50%; transform: translateY(-50%); font-size: 48px; color: {risk_color}; opacity: 0.15;">{risk_icon}</div>
+        </div>
+        """, unsafe_allow_html=True)
 
     # SIGNAL STATUS
     with c2:
-        st.markdown("### 📡 SIGNAL FEED")
         sig_type, sig_label, sig_desc = get_signal_status(report)
-        style_cls = {'TRADE': 'sig-trade', 'PASS': 'sig-pass', 'NO_EDGE': 'sig-none'}[sig_type]
+        sig_colors = {'TRADE': '#10b981', 'PASS': '#f59e0b', 'NO_EDGE': '#64748b'}
+        sig_color = sig_colors.get(sig_type, '#64748b')
+        sig_bg = f"rgba({16 if sig_type=='TRADE' else 245},{185 if sig_type=='TRADE' else 158},{129 if sig_type=='TRADE' else 11},0.1)"
         
         st.markdown(f"""
-        <div class="signal-box">
-            <div class="signal-pill {style_cls}">{sig_label}</div>
-            <div style="margin-top: 12px; font-family: 'JetBrains Mono'; color: #94a3b8; font-size: 12px;">{sig_desc}</div>
+        <div style="
+            border: 2px solid {sig_color};
+            border-radius: 16px;
+            padding: 24px;
+            background: linear-gradient(180deg, {sig_bg} 0%, rgba(15,23,42,0.95) 100%);
+            text-align: center;
+        ">
+            <div style="color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 8px;">📡 SIGNAL FEED</div>
+            <div style="
+                display: inline-block;
+                background: {sig_color};
+                color: white;
+                padding: 8px 24px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 700;
+                letter-spacing: 1px;
+            ">{sig_label}</div>
+            <div style="color: #94a3b8; font-size: 12px; margin-top: 12px;">{sig_desc}</div>
         </div>
         """, unsafe_allow_html=True)
 
