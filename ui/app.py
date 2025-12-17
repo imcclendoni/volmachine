@@ -575,7 +575,7 @@ def render_trade_card(candidate: dict):
     
     # Colors
     badge_color = "#ef4444" if is_fallback else "#10b981"
-    badge_text = "⚠️ FALLBACK" if is_fallback else "✓ CONFIRMED"
+    badge_text = "⚠️ FALLBACK MODE" if is_fallback else "✓ CONFIRMED"
     card_border = "#ef4444" if is_fallback else "#10b981"
     
     # Card container (use Streamlit container for isolation)
@@ -583,13 +583,18 @@ def render_trade_card(candidate: dict):
         # Header using pure Streamlit  
         col_sym, col_badge = st.columns([3, 1])
         with col_sym:
-            st.markdown(f"### {symbol}")
+            fallback_tag = " [FALLBACK]" if is_fallback else ""
+            st.markdown(f"### {symbol}{fallback_tag}")
             st.caption(f"📉 {direction} • {edge_type}")
         with col_badge:
             if is_fallback:
                 st.error(badge_text)
             else:
                 st.success(badge_text)
+        
+        # FALLBACK warning (prominent, below header)
+        if is_fallback:
+            st.warning("⚠️ **Edge detected via absolute thresholds** (insufficient history). Treat as REVIEW unless `allow_fallback_edges=true`.")
         
         # Metrics using Streamlit columns with colored backgrounds via metrics
         m1, m2, m3, m4 = st.columns(4)
@@ -633,8 +638,91 @@ def render_trade_card(candidate: dict):
                 tier_text = " | ".join([f"{t['risk_pct']:.0%}: {t['contracts']} ct (${t['debit']:.0f})" for t in risk_tiers[:4]])
                 st.caption(tier_text)
             
-            # Edge Rationale
+            # Edge-Type Specific Metrics
             edge = candidate.get('edge') or {}
+            edge_type = edge.get('type', 'unknown')
+            edge_metrics = edge.get('metrics', {})
+            
+            st.markdown("**📊 Edge Metrics:**")
+            
+            if edge_type in ['skew_extreme', 'SkewExtremeEdge']:
+                # SKEW edge - show put/call IV and skew
+                put_iv = edge_metrics.get('put_iv_25d')
+                call_iv = edge_metrics.get('call_iv_25d')
+                skew = edge_metrics.get('put_call_skew')
+                percentile = edge_metrics.get('skew_percentile')
+                history_mode = edge_metrics.get('history_mode', 1)
+                
+                em1, em2 = st.columns(2)
+                with em1:
+                    if put_iv is not None:
+                        st.metric("🔴 Put IV (25d)", f"{put_iv*100:.1f}%")
+                    if skew is not None:
+                        st.metric("📐 Put-Call Skew", f"{skew*100:.1f}%")
+                with em2:
+                    if call_iv is not None:
+                        st.metric("🟢 Call IV (25d)", f"{call_iv*100:.1f}%")
+                    if percentile is not None and history_mode == 1:
+                        st.metric("📈 Skew Percentile", f"{percentile*100:.0f}%")
+                    elif history_mode == 0:
+                        st.caption("📈 Percentile: N/A (fallback mode)")
+                        
+            elif edge_type in ['vrp', 'VRPEdge']:
+                # VRP edge - show IV, RV, ratio
+                atm_iv = edge_metrics.get('atm_iv')
+                rv_20d = edge_metrics.get('rv_20d')
+                iv_rv_ratio = edge_metrics.get('iv_rv_ratio')
+                threshold = edge_metrics.get('threshold', 1.12)
+                
+                em1, em2 = st.columns(2)
+                with em1:
+                    if atm_iv is not None:
+                        st.metric("📊 ATM IV", f"{atm_iv*100:.1f}%")
+                    if rv_20d is not None:
+                        st.metric("📉 RV (20d)", f"{rv_20d*100:.1f}%")
+                with em2:
+                    if iv_rv_ratio is not None:
+                        color = "🟢" if iv_rv_ratio >= threshold else "🟡"
+                        st.metric(f"{color} IV/RV Ratio", f"{iv_rv_ratio:.2f}x")
+                        status = "ABOVE" if iv_rv_ratio >= threshold else "BELOW"
+                        st.caption(f"Threshold: {threshold:.2f} ({status})")
+                        
+            elif edge_type in ['term_structure', 'TermStructureEdge']:
+                # Term structure - show front/back IV
+                front_iv = edge_metrics.get('front_iv')
+                back_iv = edge_metrics.get('back_iv')
+                slope = edge_metrics.get('slope')
+                
+                em1, em2 = st.columns(2)
+                with em1:
+                    if front_iv is not None:
+                        st.metric("📅 Front IV", f"{front_iv*100:.1f}%")
+                with em2:
+                    if back_iv is not None:
+                        st.metric("📆 Back IV", f"{back_iv*100:.1f}%")
+                if slope is not None:
+                    st.caption(f"Term Slope: {slope:.3f}")
+                    
+            elif edge_type in ['gamma_pressure', 'GammaPressureEdge']:
+                # Gamma pressure - show gamma metrics
+                max_gamma_strike = edge_metrics.get('max_gamma_strike')
+                pin_low = edge_metrics.get('pin_zone_low')
+                pin_high = edge_metrics.get('pin_zone_high')
+                net_gamma = edge_metrics.get('net_gamma')
+                
+                if max_gamma_strike:
+                    st.metric("🎯 Max Gamma Strike", f"${max_gamma_strike:.0f}")
+                if pin_low and pin_high:
+                    st.caption(f"Pin Zone: ${pin_low:.0f} - ${pin_high:.0f}")
+                if net_gamma:
+                    gamma_side = "LONG" if net_gamma > 0 else "SHORT"
+                    st.caption(f"Net Gamma: {gamma_side}")
+            else:
+                st.caption(f"Edge type: {edge_type}")
+            
+            st.divider()
+            
+            # Edge Rationale
             rationale = edge.get('rationale', {})
             if rationale and isinstance(rationale, dict):
                 st.markdown("**💡 Why This Trade:**")
