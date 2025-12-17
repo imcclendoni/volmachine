@@ -1125,16 +1125,74 @@ def render_trade_ticket(candidate: dict):
     # Order flow buttons
     btn_col1, btn_col2, btn_col3 = st.columns([1, 1, 1])
     
+    # Get recommendation to enforce safety gates
+    recommendation = candidate.get('recommendation', 'PASS')
+    
+    # Safety gate: Only TRADE candidates can be submitted
+    if recommendation != 'TRADE':
+        st.error(f"⛔ Cannot submit: Recommendation is {recommendation} (must be TRADE)")
+        can_submit = False
+    
+    # Safety gate: No fallback edges unless allowed
+    allow_fallback = True  # TODO: Read from config
+    if is_fallback and not allow_fallback:
+        st.error("⛔ Cannot submit: FALLBACK edge - set allow_fallback_edges=true to trade")
+        can_submit = False
+    
     with btn_col1:
         if order_state == 'initial':
             if st.button("🔍 PREVIEW ORDER", key=f"preview_{candidate_id}", disabled=not can_submit):
                 st.session_state['order_states'][candidate_id] = 'previewing'
-                st.info("Preview: Connect to IBKR to resolve contracts...")
-                # In production: resolve_contracts() would be called here
-                st.session_state['order_states'][candidate_id] = 'previewed'
+                
+                # Actual IBKR contract resolution
+                try:
+                    from execution.ibkr_order_client import get_ibkr_client, LiveTradingBlocked
+                    
+                    client = get_ibkr_client(port=7497)  # Paper trading
+                    
+                    if not client.is_connected():
+                        connected = client.connect()
+                        if not connected:
+                            st.error("❌ Failed to connect to IBKR Gateway")
+                            st.session_state['order_states'][candidate_id] = 'initial'
+                            st.rerun()
+                    
+                    # Resolve contracts
+                    legs = structure.get('legs', [])
+                    resolved_legs = client.resolve_contracts(legs)
+                    
+                    # Store resolved legs in session
+                    if 'resolved_legs' not in st.session_state:
+                        st.session_state['resolved_legs'] = {}
+                    st.session_state['resolved_legs'][candidate_id] = resolved_legs
+                    
+                    # Check all legs resolved
+                    all_resolved = all(leg.is_resolved for leg in resolved_legs)
+                    
+                    if all_resolved:
+                        st.session_state['order_states'][candidate_id] = 'previewed'
+                        st.success("✅ Contracts resolved via IBKR")
+                    else:
+                        errors = [leg.error for leg in resolved_legs if not leg.is_resolved]
+                        st.error(f"❌ Contract resolution failed: {', '.join(errors)}")
+                        st.session_state['order_states'][candidate_id] = 'initial'
+                    
+                except LiveTradingBlocked as e:
+                    st.error(f"🚨 LIVE TRADING BLOCKED: {e}")
+                    st.session_state['order_states'][candidate_id] = 'initial'
+                except ImportError:
+                    st.error("❌ ib_insync not installed. Run: pip install ib_insync")
+                    st.session_state['order_states'][candidate_id] = 'initial'
+                except Exception as e:
+                    st.error(f"❌ IBKR error: {e}")
+                    st.session_state['order_states'][candidate_id] = 'initial'
+                
                 st.rerun()
+                
         elif order_state == 'previewed':
-            st.success("✅ Preview complete - contracts resolved")
+            resolved_legs = st.session_state.get('resolved_legs', {}).get(candidate_id, [])
+            if resolved_legs:
+                st.success(f"✅ Preview: {len(resolved_legs)} contracts resolved")
         elif order_state == 'submitted':
             st.info("📤 Order submitted to IBKR")
     
@@ -1142,10 +1200,48 @@ def render_trade_ticket(candidate: dict):
         if order_state == 'previewed':
             submit_disabled = not (can_submit and fallback_confirmed)
             if st.button("✅ SUBMIT ORDER", key=f"submit_{candidate_id}", type="primary", disabled=submit_disabled):
-                st.session_state['order_states'][candidate_id] = 'submitted'
-                st.session_state['confirmed_trades'].add(candidate_id)
-                st.success("Order submitted to IBKR Paper!")
+                try:
+                    from execution.ibkr_order_client import get_ibkr_client
+                    
+                    client = get_ibkr_client(port=7497)
+                    
+                    # Get resolved legs from session
+                    resolved_legs = st.session_state.get('resolved_legs', {}).get(candidate_id, [])
+                    
+                    if not resolved_legs:
+                        st.error("❌ No resolved legs - click Preview first")
+                    else:
+                        # Get limit price
+                        credit = structure.get('entry_credit_dollars', 0)
+                        debit = structure.get('entry_debit_dollars', 0)
+                        limit_price = (credit / 100) if credit > 0 else -(debit / 100)
+                        
+                        # Create order ticket
+                        ticket = client.create_order_ticket(
+                            candidate_id=candidate_id,
+                            symbol=symbol,
+                            resolved_legs=resolved_legs,
+                            quantity=selected_contracts,
+                            limit_price=limit_price,
+                        )
+                        
+                        # Submit with transmit=True
+                        submitted_ticket = client.submit_order(ticket, transmit=True)
+                        
+                        # Store order ticket in session
+                        if 'order_tickets' not in st.session_state:
+                            st.session_state['order_tickets'] = {}
+                        st.session_state['order_tickets'][candidate_id] = submitted_ticket
+                        
+                        st.session_state['order_states'][candidate_id] = 'submitted'
+                        st.session_state['confirmed_trades'].add(candidate_id)
+                        st.success(f"✅ Order {submitted_ticket.order_id} submitted!")
+                        
+                except Exception as e:
+                    st.error(f"❌ Submit failed: {e}")
+                
                 st.rerun()
+                
         elif order_state == 'submitted':
             st.success("✅ Order SUBMITTED")
     
@@ -1154,6 +1250,10 @@ def render_trade_ticket(candidate: dict):
             if st.button("❌ Cancel", key=f"cancel_{candidate_id}"):
                 st.session_state['order_states'][candidate_id] = 'initial'
                 st.session_state['confirmed_trades'].discard(candidate_id)
+                if 'resolved_legs' in st.session_state:
+                    st.session_state['resolved_legs'].pop(candidate_id, None)
+                if 'order_tickets' in st.session_state:
+                    st.session_state['order_tickets'].pop(candidate_id, None)
                 st.rerun()
     
     # Order status display
