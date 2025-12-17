@@ -161,11 +161,12 @@ class DeterministicBacktester:
         # Find all report files in range
         current = start_date
         while current <= end_date:
-            # Try both session and legacy filenames
+            # Try all filename patterns including backfill
             patterns = [
                 self.reports_dir / f'{current.isoformat()}.json',
                 self.reports_dir / f'{current.isoformat()}_open.json',
                 self.reports_dir / f'{current.isoformat()}_close.json',
+                self.reports_dir / f'{current.isoformat()}_backfill.json',
             ]
             
             for report_path in patterns:
