@@ -256,6 +256,7 @@ def detect_skew_edge(
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
                 'is_steep': 1.0,  # Numeric flag for steep skew
+                'history_mode': 1.0,  # Percentile-based (not fallback)
             },
             rationale=rationale,
             regime_at_signal=regime,
@@ -293,6 +294,7 @@ def detect_skew_edge(
                 'put_call_skew': round(current_skew, 4),
                 'skew_percentile': round(percentile, 1),
                 'is_flat': 1.0,  # Numeric flag for flat skew
+                'history_mode': 1.0,  # Percentile-based (not fallback)
             },
             rationale=rationale,
             regime_at_signal=regime,
