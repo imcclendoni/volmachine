@@ -766,50 +766,100 @@ def render_trade_card(candidate: dict):
                 st.session_state['card_states'][card_key] = 'previewing'
                 st.rerun()
         elif card_state == 'previewing':
-            # IBKR Preview step
-            st.warning(f"⏳ Connecting to IBKR to preview {symbol} order...")
+            # IBKR Preview step - try webhook first, then subprocess
+            st.warning(f"⏳ Connecting to execute {symbol}...")
+            
+            # Check for webhook configuration
+            webhook_url = None
+            webhook_token = None
             try:
-                import subprocess
-                result = subprocess.run(
-                    ['python3', 'scripts/submit_test_order.py', '--paper', '--dry-run', '--symbol', symbol],
-                    capture_output=True, text=True, timeout=60, cwd=str(Path(__file__).parent.parent)
-                )
-                output = result.stdout + result.stderr
-                
-                # Check if running on cloud without ib_insync
-                if 'ib_insync' in output or 'ModuleNotFoundError' in output:
-                    st.error("🔒 **LOCAL ONLY** - IBKR execution requires local setup")
+                if hasattr(st, 'secrets'):
+                    webhook_url = st.secrets.get('WEBHOOK_URL', None)
+                    webhook_token = st.secrets.get('WEBHOOK_TOKEN', None)
+            except:
+                pass
+            
+            if webhook_url and webhook_token:
+                # Use webhook for remote execution
+                try:
+                    import requests
+                    headers = {'Authorization': f'Bearer {webhook_token}'}
+                    payload = {'symbol': symbol, 'action': 'preview'}
                     
-                    # Generate the command
-                    cmd = f"python3 scripts/submit_test_order.py --paper --submit --symbol {symbol}"
+                    response = requests.post(
+                        f"{webhook_url}/execute",
+                        json=payload,
+                        headers=headers,
+                        timeout=90
+                    )
                     
-                    st.markdown("**Quick Execute:** Copy this command and run in your local terminal:")
-                    st.code(cmd, language="bash")
-                    
-                    # Copy button
-                    if st.button("📋 Copy Command", key=f"copy_{candidate_id}"):
-                        st.session_state['copied_cmd'] = cmd
-                        st.success("✅ Copied! Paste in terminal and press Enter")
-                    
-                    with st.expander("Setup Instructions"):
-                        st.markdown("""
-                        1. Start IBKR Gateway on port 4002
-                        2. Open terminal in volmachine folder
-                        3. Paste the command above
-                        4. Check Blotter tab for confirmation
-                        """)
-                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success'):
+                            st.session_state['card_states'][card_key] = 'confirmed'
+                            st.session_state[f'preview_{card_key}'] = data.get('output', '')
+                            st.rerun()
+                        else:
+                            st.error(f"Preview failed: {data.get('output', 'Unknown error')}")
+                            st.session_state['card_states'][card_key] = 'ready'
+                    else:
+                        st.error(f"Webhook error: {response.status_code} - {response.text}")
+                        st.session_state['card_states'][card_key] = 'ready'
+                except requests.exceptions.ConnectionError:
+                    st.error("🔌 Cannot reach webhook server. Is it running?")
+                    st.code("python3 scripts/webhook_server.py", language="bash")
                     st.session_state['card_states'][card_key] = 'ready'
-                elif result.returncode == 0:
-                    st.session_state['card_states'][card_key] = 'confirmed'
-                    st.session_state[f'preview_{card_key}'] = result.stdout
-                    st.rerun()
-                else:
-                    st.error(f"Preview failed: {output}")
+                except Exception as e:
+                    st.error(f"Webhook error: {e}")
                     st.session_state['card_states'][card_key] = 'ready'
-            except Exception as e:
-                st.error(f"IBKR connection error: {e}")
-                st.session_state['card_states'][card_key] = 'ready'
+            else:
+                # Fallback to subprocess (local only)
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['python3', 'scripts/submit_test_order.py', '--paper', '--dry-run', '--symbol', symbol],
+                        capture_output=True, text=True, timeout=60, cwd=str(Path(__file__).parent.parent)
+                    )
+                    output = result.stdout + result.stderr
+                    
+                    # Check if running on cloud without ib_insync
+                    if 'ib_insync' in output or 'ModuleNotFoundError' in output:
+                        st.error("🔒 **LOCAL ONLY** - IBKR execution requires local setup")
+                        
+                        # Generate the command
+                        cmd = f"python3 scripts/submit_test_order.py --paper --submit --symbol {symbol}"
+                        
+                        st.markdown("**Quick Execute:** Copy this command and run in your local terminal:")
+                        st.code(cmd, language="bash")
+                        
+                        # Copy button
+                        if st.button("📋 Copy Command", key=f"copy_{candidate_id}"):
+                            st.session_state['copied_cmd'] = cmd
+                            st.success("✅ Copied! Paste in terminal and press Enter")
+                        
+                        with st.expander("🔧 Enable Remote Execution"):
+                            st.markdown("""
+                            **Set up webhook for one-click execution:**
+                            1. `python3 scripts/webhook_server.py` (local terminal)
+                            2. `ngrok http 8765` (expose to internet)
+                            3. Add to `.streamlit/secrets.toml`:
+                            ```
+                            WEBHOOK_URL = "https://your-ngrok-url.ngrok.io"
+                            WEBHOOK_TOKEN = "your-token-from-server"
+                            ```
+                            """)
+                        
+                        st.session_state['card_states'][card_key] = 'ready'
+                    elif result.returncode == 0:
+                        st.session_state['card_states'][card_key] = 'confirmed'
+                        st.session_state[f'preview_{card_key}'] = result.stdout
+                        st.rerun()
+                    else:
+                        st.error(f"Preview failed: {output}")
+                        st.session_state['card_states'][card_key] = 'ready'
+                except Exception as e:
+                    st.error(f"IBKR connection error: {e}")
+                    st.session_state['card_states'][card_key] = 'ready'
         elif card_state == 'confirmed':
             # Show preview results
             preview_output = st.session_state.get(f'preview_{card_key}', '')
@@ -829,24 +879,66 @@ def render_trade_card(candidate: dict):
                     st.session_state['card_states'][card_key] = 'ready'
                     st.rerun()
         elif card_state == 'submitting':
-            # Actually submit to IBKR
+            # Actually submit to IBKR - try webhook first
             st.warning(f"🚀 Submitting {symbol} to IBKR...")
+            
+            # Check for webhook configuration
+            webhook_url = None
+            webhook_token = None
             try:
-                import subprocess
-                result = subprocess.run(
-                    ['python3', 'scripts/submit_test_order.py', '--paper', '--submit', '--symbol', symbol],
-                    capture_output=True, text=True, timeout=90, cwd=str(Path(__file__).parent.parent)
-                )
-                if result.returncode == 0 and 'Recorded to blotter' in result.stdout:
-                    st.session_state['card_states'][card_key] = 'submitted'
-                    st.session_state[f'submit_{card_key}'] = result.stdout
-                    st.rerun()
-                else:
-                    st.error(f"Submit failed: {result.stderr or result.stdout}")
+                if hasattr(st, 'secrets'):
+                    webhook_url = st.secrets.get('WEBHOOK_URL', None)
+                    webhook_token = st.secrets.get('WEBHOOK_TOKEN', None)
+            except:
+                pass
+            
+            if webhook_url and webhook_token:
+                # Use webhook for remote execution
+                try:
+                    import requests
+                    headers = {'Authorization': f'Bearer {webhook_token}'}
+                    payload = {'symbol': symbol, 'action': 'submit'}
+                    
+                    response = requests.post(
+                        f"{webhook_url}/execute",
+                        json=payload,
+                        headers=headers,
+                        timeout=120
+                    )
+                    
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and 'Recorded to blotter' in data.get('output', ''):
+                            st.session_state['card_states'][card_key] = 'submitted'
+                            st.session_state[f'submit_{card_key}'] = data.get('output', '')
+                            st.rerun()
+                        else:
+                            st.error(f"Submit failed: {data.get('output', 'Unknown error')}")
+                            st.session_state['card_states'][card_key] = 'confirmed'
+                    else:
+                        st.error(f"Webhook error: {response.status_code} - {response.text}")
+                        st.session_state['card_states'][card_key] = 'confirmed'
+                except Exception as e:
+                    st.error(f"Webhook submission error: {e}")
                     st.session_state['card_states'][card_key] = 'confirmed'
-            except Exception as e:
-                st.error(f"IBKR submission error: {e}")
-                st.session_state['card_states'][card_key] = 'confirmed'
+            else:
+                # Fallback to subprocess
+                try:
+                    import subprocess
+                    result = subprocess.run(
+                        ['python3', 'scripts/submit_test_order.py', '--paper', '--submit', '--symbol', symbol],
+                        capture_output=True, text=True, timeout=90, cwd=str(Path(__file__).parent.parent)
+                    )
+                    if result.returncode == 0 and 'Recorded to blotter' in result.stdout:
+                        st.session_state['card_states'][card_key] = 'submitted'
+                        st.session_state[f'submit_{card_key}'] = result.stdout
+                        st.rerun()
+                    else:
+                        st.error(f"Submit failed: {result.stderr or result.stdout}")
+                        st.session_state['card_states'][card_key] = 'confirmed'
+                except Exception as e:
+                    st.error(f"IBKR submission error: {e}")
+                    st.session_state['card_states'][card_key] = 'confirmed'
         elif card_state == 'submitted':
             submit_output = st.session_state.get(f'submit_{card_key}', '')
             st.success(f"✅ {symbol} ORDER SUBMITTED!")
