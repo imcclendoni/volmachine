@@ -217,6 +217,9 @@ def _serialize_candidate(candidate: TradeCandidate) -> dict:
             }
             for d in (candidate.pass_diagnostics or [])
         ],
+        
+        # Probability metrics (PoP, EV, etc.)
+        'probability_metrics': getattr(candidate, 'probability_metrics', None),
     }
 
 

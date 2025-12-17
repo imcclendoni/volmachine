@@ -21,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from engine import VolMachineEngine, get_logger
 
 
-def run_single_check(engine: VolMachineEngine):
-    """Run a single intraday check."""
+def run_single_check(engine: VolMachineEngine, export_json: bool = True):
+    """Run a single intraday check with optional full report export."""
     logger = get_logger()
     
     print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Intraday Check")
@@ -52,6 +52,53 @@ def run_single_check(engine: VolMachineEngine):
     summary = engine.portfolio.get_risk_summary()
     print(f"\n   Positions: {summary['total_positions']}/{summary['max_positions']}")
     print(f"   Risk Used: ${summary['total_risk_dollars']:.0f} ({summary['risk_used_pct']:.0f}%)")
+    
+    # Run full engine scan and export JSON for UI
+    if export_json:
+        try:
+            from datetime import date
+            from engine.report_json import export_report_json
+            
+            run_date = date.today()
+            report = engine.run_daily(run_date=run_date)
+            
+            if report:
+                # Build provider status
+                provider_status = {
+                    'connected': engine.provider is not None,
+                    'source': engine.provider.__class__.__name__ if engine.provider else 'none',
+                    'last_run': datetime.now().isoformat(),
+                }
+                
+                # Build universe scan summary  
+                symbols_scanned = list(engine.get_enabled_symbols())
+                symbols_with_edges = list(set(e.symbol for e in report.edges))
+                symbols_with_trades = list(set(c.symbol for c in report.candidates if c.recommendation == 'TRADE'))
+                
+                universe_scan = {
+                    'symbols_scanned': len(symbols_scanned),
+                    'symbols_with_data': len(symbols_scanned),
+                    'symbols_with_edges': len(symbols_with_edges),
+                    'symbols_with_trades': len(symbols_with_trades),
+                }
+                
+                # Export JSON to update latest.json for UI
+                json_path = export_report_json(
+                    report_date=run_date,
+                    regime=report.regime,
+                    edges=report.edges,
+                    candidates=report.candidates,
+                    trading_allowed=report.trading_allowed,
+                    do_not_trade_reasons=report.do_not_trade_reasons,
+                    output_dir='./logs/reports',
+                    provider_status=provider_status,
+                    universe_scan=universe_scan,
+                )
+                
+                print(f"\n   📊 Report updated: {json_path}")
+                print(f"   📈 Edges: {len(report.edges)}, Candidates: {len(report.candidates)}")
+        except Exception as e:
+            print(f"   ⚠️ Report export failed: {e}")
     
     return status.trading_allowed
 
