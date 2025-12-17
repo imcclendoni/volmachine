@@ -185,6 +185,12 @@ class IBKROrderClient:
         """
         Resolve option contracts via reqContractDetails.
         
+        Enhanced flow:
+        1. Resolve underlying stock to get conId
+        2. Get valid expirations/strikes via reqSecDefOptParams
+        3. Map requested expiry/strike to nearest valid values
+        4. Resolve option contract
+        
         Args:
             legs: List of leg dicts from candidate structure
             
@@ -194,9 +200,13 @@ class IBKROrderClient:
         if not self._connected:
             raise ConnectionError("Not connected to IBKR")
         
-        from ib_insync import Option
+        from ib_insync import Option, Stock
         
         resolved = []
+        
+        # Cache underlying conIds and option chains to avoid repeated lookups
+        underlying_cache = {}
+        chain_cache = {}
         
         for leg in legs:
             # Parse leg data
@@ -206,19 +216,6 @@ class IBKROrderClient:
             option_type = leg.get('option_type', 'C')[0].upper()
             action = leg.get('action', 'BUY')
             quantity = int(leg.get('quantity', 1))
-            
-            # Convert expiration to IBKR format (YYYYMMDD)
-            exp_str = expiration.replace('-', '')
-            
-            # Create option contract
-            contract = Option(
-                symbol=symbol,
-                lastTradeDateOrContractMonth=exp_str,
-                strike=strike,
-                right=option_type,
-                exchange='SMART',
-                currency='USD',
-            )
             
             resolved_leg = ResolvedLeg(
                 symbol=symbol,
@@ -230,6 +227,99 @@ class IBKROrderClient:
             )
             
             try:
+                # Step 1: Resolve underlying stock to get conId
+                if symbol not in underlying_cache:
+                    stock = Stock(symbol, 'SMART', 'USD')
+                    qualified = self._ib.qualifyContracts(stock)
+                    if qualified:
+                        underlying_cache[symbol] = qualified[0].conId
+                        logger.info(f"Resolved underlying: {symbol} -> conId={qualified[0].conId}")
+                    else:
+                        resolved_leg.error = f"Could not resolve underlying stock {symbol}"
+                        resolved.append(resolved_leg)
+                        continue
+                
+                underlying_con_id = underlying_cache[symbol]
+                
+                # Step 2: Get valid expirations/strikes via reqSecDefOptParams
+                if symbol not in chain_cache:
+                    chains = self._ib.reqSecDefOptParams(symbol, '', 'STK', underlying_con_id)
+                    if chains:
+                        # Collect all expirations and strikes across exchanges
+                        all_expirations = set()
+                        all_strikes = set()
+                        for chain in chains:
+                            all_expirations.update(chain.expirations)
+                            all_strikes.update(chain.strikes)
+                        
+                        chain_cache[symbol] = {
+                            'expirations': sorted(all_expirations),
+                            'strikes': sorted(all_strikes),
+                        }
+                        logger.info(f"Option chain for {symbol}: {len(all_expirations)} expirations, {len(all_strikes)} strikes")
+                    else:
+                        resolved_leg.error = f"No option chain found for {symbol}"
+                        resolved.append(resolved_leg)
+                        continue
+                
+                chain = chain_cache[symbol]
+                available_exps = chain['expirations']
+                available_strikes = chain['strikes']
+                
+                # Step 3: Map requested expiry to nearest valid IBKR expiry
+                requested_exp = expiration.replace('-', '')  # YYYYMMDD format
+                
+                if requested_exp in available_exps:
+                    ibkr_exp = requested_exp
+                else:
+                    # Find nearest expiration
+                    nearest_exp = min(available_exps, key=lambda x: abs(int(x) - int(requested_exp)), default=None)
+                    if nearest_exp:
+                        exp_diff = abs(int(nearest_exp) - int(requested_exp))
+                        if exp_diff <= 7:  # Allow up to 7 day mismatch
+                            ibkr_exp = nearest_exp
+                            logger.warning(f"Expiry mapped: {requested_exp} -> {ibkr_exp} (diff: {exp_diff} days)")
+                        else:
+                            resolved_leg.error = f"IBKR chain mismatch: expiry {requested_exp} not available. Nearest: {nearest_exp} (too far)"
+                            logger.error(f"Available expirations (first 10): {available_exps[:10]}")
+                            resolved.append(resolved_leg)
+                            continue
+                    else:
+                        resolved_leg.error = f"No expirations available for {symbol}"
+                        resolved.append(resolved_leg)
+                        continue
+                
+                # Step 4: Map requested strike to nearest valid IBKR strike
+                if strike in available_strikes:
+                    ibkr_strike = strike
+                else:
+                    # Find nearest strike
+                    nearest_strike = min(available_strikes, key=lambda x: abs(x - strike), default=None)
+                    if nearest_strike:
+                        strike_diff = abs(nearest_strike - strike)
+                        # Allow up to 1 strike increment (typically $1 for SPY)
+                        if strike_diff <= 1.5:
+                            ibkr_strike = nearest_strike
+                            logger.warning(f"Strike mapped: {strike} -> {ibkr_strike} (diff: {strike_diff})")
+                        else:
+                            resolved_leg.error = f"IBKR chain mismatch: strike {strike} not available. Nearest: {nearest_strike} (gap too large)"
+                            resolved.append(resolved_leg)
+                            continue
+                    else:
+                        resolved_leg.error = f"No strikes available for {symbol}"
+                        resolved.append(resolved_leg)
+                        continue
+                
+                # Step 5: Create option contract with validated expiry/strike
+                contract = Option(
+                    symbol=symbol,
+                    lastTradeDateOrContractMonth=ibkr_exp,
+                    strike=ibkr_strike,
+                    right=option_type,
+                    exchange='SMART',
+                    currency='USD',
+                )
+                
                 # Qualify contract to get conId
                 qualified = self._ib.qualifyContracts(contract)
                 
@@ -239,10 +329,13 @@ class IBKROrderClient:
                     resolved_leg.local_symbol = qc.localSymbol
                     resolved_leg.trading_class = qc.tradingClass
                     resolved_leg.is_resolved = True
-                    logger.info(f"Resolved: {qc.localSymbol} -> conId={qc.conId}")
+                    # Update strike/expiration to what IBKR actually resolved
+                    resolved_leg.strike = ibkr_strike
+                    resolved_leg.expiration = f"{ibkr_exp[:4]}-{ibkr_exp[4:6]}-{ibkr_exp[6:]}"
+                    logger.info(f"✅ Resolved: {qc.localSymbol} -> conId={qc.conId}")
                 else:
-                    resolved_leg.error = "Contract not found"
-                    logger.warning(f"Failed to resolve: {symbol} {expiration} {strike} {option_type}")
+                    resolved_leg.error = "Contract not found after validation"
+                    logger.warning(f"Failed to resolve validated contract: {symbol} {ibkr_exp} {ibkr_strike} {option_type}")
                     
             except Exception as e:
                 resolved_leg.error = str(e)

@@ -117,12 +117,12 @@ def main():
     print("Testing contract resolution...")
     print(f"{'─' * 40}")
     
-    # Create a sample leg to test resolution
+    # Create a sample leg to test resolution (use valid future expiry)
     sample_legs = [{
         'symbol': 'SPY',
-        'strike': 600.0,
+        'strike': 595.0,
         'option_type': 'P',
-        'expiration': '2024-12-20',  # Use a valid date
+        'expiration': '2025-12-19',  # Valid future expiry from IBKR chain
         'action': 'BUY',
         'quantity': 1,
     }]
