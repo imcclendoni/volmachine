@@ -1270,12 +1270,234 @@ def render_trade_ticket(candidate: dict):
         """.format(contracts=selected_contracts), unsafe_allow_html=True)
 
 
+def render_blotter_tab():
+    """
+    Render Blotter tab with:
+    - Open positions with live P&L
+    - Trade history table
+    - Performance statistics
+    """
+    import sys
+    sys.path.insert(0, str(Path(__file__).parent.parent))
+    from execution.blotter import get_blotter
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7)); 
+                border: 1px solid rgba(71,85,105,0.4); border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 2rem;">📊</span>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">TRADE BLOTTER</div>
+                <div style="color: #94a3b8; font-size: 0.9rem;">Paper trading performance & position tracking</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    blotter = get_blotter()
+    summary = blotter.get_summary()
+    open_trades = blotter.get_open_trades()
+    closed_trades = blotter.get_closed_trades()
+    
+    # SUMMARY CARDS
+    c1, c2, c3, c4 = st.columns(4)
+    
+    with c1:
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.6); border: 1px solid #475569; border-radius: 8px; padding: 20px; text-align: center;">
+            <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Total Trades</div>
+            <div style="color: #f1f5f9; font-size: 2rem; font-weight: 700;">{summary['total_trades']}</div>
+            <div style="color: #64748b; font-size: 11px;">{summary['open_trades']} open</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with c2:
+        pnl = summary['total_pnl']
+        pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
+        pnl_sign = "+" if pnl >= 0 else ""
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.6); border: 1px solid #475569; border-radius: 8px; padding: 20px; text-align: center;">
+            <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Total P&L</div>
+            <div style="color: {pnl_color}; font-size: 2rem; font-weight: 700;">{pnl_sign}${pnl:.0f}</div>
+            <div style="color: #64748b; font-size: 11px;">Realized</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with c3:
+        win_rate = summary['win_rate']
+        wr_color = "#10b981" if win_rate >= 50 else "#f59e0b" if win_rate >= 40 else "#ef4444"
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.6); border: 1px solid #475569; border-radius: 8px; padding: 20px; text-align: center;">
+            <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Win Rate</div>
+            <div style="color: {wr_color}; font-size: 2rem; font-weight: 700;">{win_rate:.1f}%</div>
+            <div style="color: #64748b; font-size: 11px;">{summary['winners']}W / {summary['losers']}L</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    with c4:
+        avg_pnl = summary['avg_pnl']
+        avg_color = "#10b981" if avg_pnl >= 0 else "#ef4444"
+        avg_sign = "+" if avg_pnl >= 0 else ""
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.6); border: 1px solid #475569; border-radius: 8px; padding: 20px; text-align: center;">
+            <div style="color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 1px;">Avg P&L</div>
+            <div style="color: {avg_color}; font-size: 2rem; font-weight: 700;">{avg_sign}${avg_pnl:.0f}</div>
+            <div style="color: #64748b; font-size: 11px;">Per trade</div>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # OPEN POSITIONS
+    st.markdown("""
+    <div style="color: #f1f5f9; font-size: 1.2rem; font-weight: 600; margin-bottom: 12px; 
+                border-bottom: 2px solid #3b82f6; padding-bottom: 8px;">
+        🟢 OPEN POSITIONS
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if open_trades:
+        for trade in open_trades:
+            entry_display = f"+${trade.entry_price:.2f}" if trade.entry_price > 0 else f"-${abs(trade.entry_price):.2f}"
+            spread_type = "CREDIT" if trade.entry_price > 0 else "DEBIT"
+            
+            st.markdown(f"""
+            <div style="background: rgba(30,41,59,0.5); border: 1px solid #475569; border-radius: 8px; 
+                        padding: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <span style="color: #3b82f6; font-weight: 700; font-size: 1.1rem;">{trade.symbol}</span>
+                    <span style="color: #64748b; margin-left: 12px;">{trade.structure} • {trade.dte} DTE</span>
+                </div>
+                <div style="text-align: right;">
+                    <div style="color: #10b981; font-weight: 600;">{spread_type} {entry_display}</div>
+                    <div style="color: #64748b; font-size: 11px;">Max Loss: ${trade.max_loss_dollars:.0f}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: rgba(30,41,59,0.3); border: 1px dashed #475569; border-radius: 8px; 
+                    padding: 40px; text-align: center; color: #64748b;">
+            No open positions
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # TRADE HISTORY
+    st.markdown("""
+    <div style="color: #f1f5f9; font-size: 1.2rem; font-weight: 600; margin-bottom: 12px; 
+                border-bottom: 2px solid #6366f1; padding-bottom: 8px;">
+        📜 TRADE HISTORY
+    </div>
+    """, unsafe_allow_html=True)
+    
+    if closed_trades:
+        for trade in sorted(closed_trades, key=lambda t: t.exit_timestamp or t.timestamp, reverse=True)[:20]:
+            pnl = trade.realized_pnl
+            pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
+            pnl_sign = "+" if pnl >= 0 else ""
+            result_icon = "✅" if pnl >= 0 else "❌"
+            
+            date_str = trade.timestamp[:10] if trade.timestamp else "N/A"
+            
+            st.markdown(f"""
+            <div style="background: rgba(30,41,59,0.4); border-left: 3px solid {pnl_color}; 
+                        padding: 12px 16px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span style="font-size: 1.2rem;">{result_icon}</span>
+                    <div>
+                        <span style="color: #f1f5f9; font-weight: 600;">{trade.symbol}</span>
+                        <span style="color: #64748b; margin-left: 8px;">{trade.structure}</span>
+                    </div>
+                </div>
+                <div style="display: flex; gap: 24px; align-items: center;">
+                    <div style="color: #94a3b8; font-size: 12px;">{trade.edge_type}</div>
+                    <div style="color: #64748b; font-size: 12px;">{date_str}</div>
+                    <div style="color: {pnl_color}; font-weight: 700; min-width: 80px; text-align: right;">{pnl_sign}${pnl:.0f}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="background: rgba(30,41,59,0.3); border: 1px dashed #475569; border-radius: 8px; 
+                    padding: 40px; text-align: center; color: #64748b;">
+            No closed trades yet — start paper trading to build history
+        </div>
+        """, unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # PERFORMANCE BY SYMBOL / EDGE
+    if summary['by_symbol'] or summary['by_edge']:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("""
+            <div style="color: #f1f5f9; font-size: 1rem; font-weight: 600; margin-bottom: 12px;">
+                📈 BY SYMBOL
+            </div>
+            """, unsafe_allow_html=True)
+            
+            for sym, data in summary['by_symbol'].items():
+                sym_pnl = data['pnl']
+                sym_color = "#10b981" if sym_pnl >= 0 else "#ef4444"
+                sym_sign = "+" if sym_pnl >= 0 else ""
+                st.markdown(f"""
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155;">
+                    <span style="color: #f1f5f9; font-weight: 500;">{sym}</span>
+                    <span style="color: {sym_color}; font-weight: 600;">{sym_sign}${sym_pnl:.0f} ({data['trades']} trades)</span>
+                </div>
+                """, unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("""
+            <div style="color: #f1f5f9; font-size: 1rem; font-weight: 600; margin-bottom: 12px;">
+                🎯 BY EDGE TYPE
+            </div>
+            """, unsafe_allow_html=True)
+            
+            for edge, data in summary['by_edge'].items():
+                edge_pnl = data['pnl']
+                edge_color = "#10b981" if edge_pnl >= 0 else "#ef4444"
+                edge_sign = "+" if edge_pnl >= 0 else ""
+                st.markdown(f"""
+                <div style="display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #334155;">
+                    <span style="color: #f1f5f9; font-weight: 500;">{edge}</span>
+                    <span style="color: {edge_color}; font-weight: 600;">{edge_sign}${edge_pnl:.0f} ({data['trades']} trades)</span>
+                </div>
+                """, unsafe_allow_html=True)
+
+
 def main():
+    # SIDEBAR NAVIGATION
+    with st.sidebar:
+        st.markdown("""
+        <div style="text-align: center; padding: 20px 0;">
+            <div style="font-size: 1.5rem; font-weight: 700; color: #38bdf8;">VOLMACHINE</div>
+            <div style="color: #64748b; font-size: 0.8rem;">Paper Trading Terminal</div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        page = st.radio(
+            "Navigation",
+            ["📈 Dashboard", "📊 Blotter"],
+            label_visibility="collapsed"
+        )
+        
+        st.markdown("---")
+        st.caption(f"v2.2 • {datetime.now().strftime('%H:%M:%S')}")
+    
+    # ROUTE TO PAGE
+    if page == "📊 Blotter":
+        render_blotter_tab()
+        return
+    
     # HEADLINE
     col1, col2 = st.columns([3, 1])
     with col1:
         st.markdown('<h1 class="main-title">VOLMACHINE<span style="color:#fff; font-weight:300">DESK</span></h1>', unsafe_allow_html=True)
-        st.caption(f"SYSTEM ONLINE • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} • v2.1")
+        st.caption(f"SYSTEM ONLINE • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} • v2.2")
         
     # INIT SESSION STATE
     if 'terminal_logs' not in st.session_state:
