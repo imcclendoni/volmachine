@@ -154,9 +154,21 @@ class DeterministicBacktester:
         """
         Load signals from saved daily reports.
         
-        Each report contains candidates for that date.
+        Applies strategy toggles and symbol gates from config.
         """
         signals = []
+        
+        # Get strategy config
+        strategies_config = self.config.get('strategies', {})
+        skew_config = strategies_config.get('skew_extreme', {})
+        
+        # Strategy toggles
+        enable_credit = skew_config.get('enable_credit_spread', True)
+        enable_debit = skew_config.get('enable_debit_spread', True)
+        
+        # Symbol gates
+        enabled_symbols = skew_config.get('enabled_symbols', symbols)
+        disabled_symbols = skew_config.get('disabled_symbols', [])
         
         # Find all report files in range
         current = start_date
@@ -180,8 +192,14 @@ class DeterministicBacktester:
                     candidates = report.get('candidates', [])
                     
                     for candidate in candidates:
-                        # Filter by symbol
-                        if candidate.get('symbol', '') not in symbols:
+                        symbol = candidate.get('symbol', '')
+                        
+                        # Filter by symbol (use strategy-specific gate if available)
+                        if symbol in disabled_symbols:
+                            continue
+                        if enabled_symbols and symbol not in enabled_symbols:
+                            continue
+                        if symbol not in symbols:
                             continue
                         
                         # Filter by recommendation
@@ -192,6 +210,22 @@ class DeterministicBacktester:
                         edge = candidate.get('edge', {})
                         strength = edge.get('strength', 0)
                         if strength < min_strength:
+                            continue
+                        
+                        # Filter by structure type (strategy toggle)
+                        structure = candidate.get('structure', {})
+                        spread_type = structure.get('spread_type', structure.get('type', ''))
+                        
+                        if spread_type == 'credit' and not enable_credit:
+                            continue
+                        if spread_type == 'debit' and not enable_debit:
+                            continue
+                        
+                        # Also check structure.type for credit_spread/debit_spread
+                        struct_type = structure.get('type', '')
+                        if 'credit' in struct_type and not enable_credit:
+                            continue
+                        if 'debit' in struct_type and not enable_debit:
                             continue
                         
                         # Add signal with date context

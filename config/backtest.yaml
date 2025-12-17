@@ -1,50 +1,60 @@
-# Backtest Configuration v2
-# Structure-specific exit rules + consistent execution model
+# Backtest Configuration v3
+# With symbol gates, strategy toggles, and refined exit rules
 
 # ============================================================
 # SLIPPAGE & COMMISSIONS
 # ============================================================
 
 slippage:
-  # Slippage per leg in dollars (added to debit, subtracted from credit)
   per_leg: 0.02
 
 commissions:
-  # Per contract per leg
   per_contract: 0.65
-  # Minimum per order
   min_per_order: 0.00
-  # Reg fee per contract (estimate)
   reg_fee_per_contract: 0.02
+
+# ============================================================
+# STRATEGY TOGGLES
+# ============================================================
+
+strategies:
+  skew_extreme:
+    # Enable/disable sub-strategies
+    enable_credit_spread: true   # STEEP signals -> credit spreads
+    enable_debit_spread: false   # FLAT signals -> debit spreads (disabled - 11% win)
+    
+    # Symbol gate - which symbols are allowed for this edge
+    enabled_symbols: ["SPY", "QQQ", "IWM"]  # TLT excluded (0% win)
+    disabled_symbols: ["TLT"]
+    
+    # Minimum edge strength (0.5 = 50%)
+    min_strength: 0.50
 
 # ============================================================
 # EXIT RULES - STRUCTURE SPECIFIC
 # ============================================================
 
 exit_rules:
-  # Credit spread rules (e.g., bull put spread from steep skew)
   credit_spread:
     # Take profit at X% of credit received
-    # At 50% profit, close to lock in gains
     take_profit_pct: 50
-    # Stop loss at Yx credit (e.g., 2.0 = 2x credit = position worth 3x original)
-    # If received $1.00 credit, stop at $2.00 loss (spread worth $3.00)
-    stop_loss_mult: 2.0
-    # Time stop: exit if DTE <= X (manage gamma risk)
-    time_stop_dte: 21
-    # Max hold days (0 = hold based on DTE stop only)
+    # Stop loss at Yx credit (1.5x = tighter risk management)
+    stop_loss_mult: 1.5
+    # Time stop: exit at 50% of initial DTE OR when DTE <= 7
+    time_stop_dte: 7
+    time_stop_pct_of_dte: 50  # Exit when half the time has passed
+    # Max hold days (0 = use DTE stops only)
     max_hold_days: 0
   
-  # Debit spread rules (e.g., bear put spread from flat skew)
   debit_spread:
-    # Take profit at X% of max profit
-    # Max profit = spread width - debit paid
+    # Take profit at X% of max profit (spread width - debit)
     take_profit_pct: 50
+    # OR take profit at 100% of debit paid (double your money)
+    take_profit_debit_mult: 1.0
     # Stop loss at X% of debit paid
-    # If paid $2.00 debit, stop at $1.00 loss
     stop_loss_pct: 50
-    # Time stop: exit if DTE <= X (debit spreads need more time to work)
-    time_stop_dte: 7
+    # Time stop: exit if DTE <= X
+    time_stop_dte: 10
     # Max hold days
     max_hold_days: 0
 
@@ -53,23 +63,17 @@ exit_rules:
 # ============================================================
 
 defaults:
-  # Default lookback for backtest
   lookback_days: 90
-  # Require minimum edge strength (0.5 = 50%)
   min_edge_strength: 0.50
-  # Only include TRADE recommendations (not REVIEW)
   trade_only: true
-  # Core universe for backtesting
+  # Default universe (can be overridden by strategy-specific gates)
   symbols: ["SPY", "QQQ", "IWM", "TLT"]
 
 # ============================================================
-# VALIDATION REQUIREMENTS
+# VALIDATION
 # ============================================================
 
 validation:
-  # Require percentile-based signals only (no fallback)
   require_history_mode: true
-  # Minimum skew history days for valid percentile
   min_history_days: 20
-  # Fail if any trade uses history_mode=0
   fail_on_fallback: true
