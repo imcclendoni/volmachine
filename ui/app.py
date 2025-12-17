@@ -1148,7 +1148,7 @@ def render_trade_ticket(candidate: dict):
                 try:
                     from execution.ibkr_order_client import get_ibkr_client, LiveTradingBlocked
                     
-                    client = get_ibkr_client(port=7497)  # Paper trading
+                    client = get_ibkr_client(port=4002)  # IB Gateway paper
                     
                     if not client.is_connected():
                         connected = client.connect()
@@ -1203,7 +1203,7 @@ def render_trade_ticket(candidate: dict):
                 try:
                     from execution.ibkr_order_client import get_ibkr_client
                     
-                    client = get_ibkr_client(port=7497)
+                    client = get_ibkr_client(port=4002)  # IB Gateway paper
                     
                     # Get resolved legs from session
                     resolved_legs = st.session_state.get('resolved_legs', {}).get(candidate_id, [])

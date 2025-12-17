@@ -39,7 +39,7 @@ def main():
     
     # Configuration
     host = "127.0.0.1"
-    port = 7497  # Paper trading port
+    port = 4002  # IB Gateway paper port (use 7497 for TWS)
     client_id = 99  # Use unique ID to avoid conflicts
     
     print(f"\nConfiguration:")
