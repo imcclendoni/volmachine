@@ -65,10 +65,11 @@ def create_trade_candidate(
     
     # Check if this is a fallback edge (stored in metrics dict by edge detectors)
     edge_metrics = edge.metrics or {}
-    is_fallback_edge = (
-        edge_metrics.get('is_fallback', False) or  # Explicit fallback flag
-        edge_metrics.get('history_mode', 1) == 0   # history_mode=0 means no percentile history
-    )
+    history_mode = edge_metrics.get('history_mode', 1)
+    explicit_fallback = edge_metrics.get('is_fallback', False)
+    
+    # history_mode=0 (or 0.0) means no percentile history available
+    is_fallback_edge = explicit_fallback or (history_mode is not None and history_mode < 0.5)
     
     # Get execution config (passed via risk_budget)
     exec_config = (risk_budget or {}).get('execution_config', {})
