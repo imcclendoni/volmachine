@@ -573,7 +573,7 @@ class VolMachineEngine:
                     validation_messages=validation.warnings,
                     risk_budget={
                         'execution_config': self.universe.get('execution', {}),
-                        'spot_price': spot_price if 'spot_price' in dir() else None,
+                        'spot_price': option_chain.underlying_price if option_chain else None,
                         'config': self.config,
                     },
                 )
