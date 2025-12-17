@@ -136,25 +136,29 @@ def connect_ibkr(host: str, port: int, client_id: int) -> IB:
     return ib
 
 
-def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
+def find_priced_spread(ib: IB, symbol: str = 'SPY') -> tuple[Option, Option, float, float, float]:
     """
     Find a put spread where BOTH legs have Polygon pricing data.
     
+    Args:
+        ib: IB connection
+        symbol: Underlying symbol (SPY, QQQ, IWM, TLT)
+    
     Returns: (long_put, short_put, width, long_price, short_price)
     """
-    print("\n📊 Finding priced SPY options...")
+    print(f"\n📊 Finding priced {symbol} options...")
     
     # 1. Get spot from Polygon
-    spot = polygon_get_spot('SPY')
-    print(f"   SPY spot (Polygon): ${spot:.2f}")
+    spot = polygon_get_spot(symbol)
+    print(f"   {symbol} spot (Polygon): ${spot:.2f}")
     
     # 2. Get option chain from IBKR
-    spy = Stock('SPY', 'SMART', 'USD')
-    ib.qualifyContracts(spy)
+    stock = Stock(symbol, 'SMART', 'USD')
+    ib.qualifyContracts(stock)
     
-    chains = ib.reqSecDefOptParams('SPY', '', 'STK', spy.conId)
+    chains = ib.reqSecDefOptParams(symbol, '', 'STK', stock.conId)
     if not chains:
-        raise ValueError("No option chains found")
+        raise ValueError(f"No option chains found for {symbol}")
     
     # Pick exchange with near-term expirations
     best_chain = max(chains, key=lambda c: len([e for e in c.expirations 
@@ -176,7 +180,7 @@ def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
         valid_exps = [e for e in available_expirations if e >= min_dte][:3]
     
     if not valid_exps:
-        raise ValueError("No valid expirations in 7-21 DTE range")
+        raise ValueError(f"No valid expirations in 7-21 DTE range for {symbol}")
     
     print(f"   Candidate expirations: {valid_exps[:3]}")
     
@@ -211,8 +215,8 @@ def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
                     long_strike = max(candidates)
                 
                 # Build Polygon tickers
-                short_ticker = build_polygon_ticker('SPY', exp, short_strike, 'P')
-                long_ticker = build_polygon_ticker('SPY', exp, long_strike, 'P')
+                short_ticker = build_polygon_ticker(symbol, exp, short_strike, 'P')
+                long_ticker = build_polygon_ticker(symbol, exp, long_strike, 'P')
                 
                 # Check if both have pricing
                 short_price = polygon_get_option_price(short_ticker)
@@ -229,8 +233,8 @@ def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
                 print(f"      Long: {long_ticker} = ${long_price:.2f}")
                 
                 # Qualify contracts with IBKR
-                short_put = Option('SPY', exp, short_strike, 'P', 'SMART', currency='USD')
-                long_put = Option('SPY', exp, long_strike, 'P', 'SMART', currency='USD')
+                short_put = Option(symbol, exp, short_strike, 'P', 'SMART', currency='USD')
+                long_put = Option(symbol, exp, long_strike, 'P', 'SMART', currency='USD')
                 
                 ib.qualifyContracts(short_put, long_put)
                 
@@ -244,7 +248,7 @@ def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
                 actual_width = short_strike - long_strike
                 return long_put, short_put, actual_width, long_price, short_price
     
-    raise ValueError("Could not find a spread with Polygon pricing data")
+    raise ValueError(f"Could not find a spread with Polygon pricing data for {symbol}")
 
 
 def determine_spread_type(long_price: float, short_price: float) -> tuple[str, float]:
@@ -329,9 +333,12 @@ def create_combo_order(long_leg: Option, short_leg: Option, quantity: int,
     if limit_price <= 0:
         raise ValueError(f"Invalid limit price: ${limit_price}")
     
+    # Get symbol from leg contract
+    symbol = long_leg.symbol
+    
     # Create BAG contract
     bag = Contract()
-    bag.symbol = 'SPY'
+    bag.symbol = symbol
     bag.secType = 'BAG'
     bag.exchange = 'SMART'
     bag.currency = 'USD'
@@ -493,6 +500,9 @@ def main():
                         help='Preview only (transmit=False, no blotter)')
     parser.add_argument('--submit', action='store_true',
                         help='Submit order (transmit=True, records to blotter)')
+    parser.add_argument('--symbol', default='SPY', 
+                        choices=['SPY', 'QQQ', 'IWM', 'TLT'],
+                        help='Underlying symbol (default: SPY)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Show full stack traces')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=4002)
@@ -512,9 +522,10 @@ def main():
     mode = "DRY RUN (preview only)" if args.dry_run else "LIVE SUBMIT (records to blotter)"
     
     print("=" * 60)
-    print("IBKR Paper Test Order — Polygon Priced")
+    print(f"IBKR Paper Order — {args.symbol}")
     print("=" * 60)
     print(f"Mode: {mode}")
+    print(f"Symbol: {args.symbol}")
     print(f"Port: {args.port}")
     print()
     
@@ -525,9 +536,9 @@ def main():
         # Connect
         ib = connect_ibkr(args.host, args.port, args.client_id)
         
-        # Find spread with Polygon pricing
-        long_put, short_put, width, long_price, short_price = find_priced_spread(ib)
-        spot_price = polygon_get_spot('SPY')
+        # Find spread with Polygon pricing for the specified symbol
+        long_put, short_put, width, long_price, short_price = find_priced_spread(ib, args.symbol)
+        spot_price = polygon_get_spot(args.symbol)
         
         # Calculate DTE from expiry
         expiry_str = long_put.lastTradeDateOrContractMonth
@@ -560,7 +571,7 @@ def main():
             # Live submit - records to blotter
             result = submit_order(
                 ib, bag, order,
-                symbol='SPY',
+                symbol=args.symbol,
                 spread_type=spread_type,
                 entry_price=limit,
                 spread_width=width,
