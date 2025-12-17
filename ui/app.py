@@ -528,7 +528,7 @@ def render_status_badges(candidate: dict, is_fallback: bool):
 def render_trade_card(candidate: dict):
     """
     Render a polished trade card for grid display.
-    Beautiful contained design with colored metrics.
+    Uses hybrid approach: HTML for styling + Streamlit for interactive elements.
     """
     symbol = candidate['symbol']
     structure = candidate.get('structure') or {}
@@ -575,76 +575,50 @@ def render_trade_card(candidate: dict):
     
     # Colors
     badge_color = "#ef4444" if is_fallback else "#10b981"
-    badge_bg = "rgba(239,68,68,0.15)" if is_fallback else "rgba(16,185,129,0.15)"
     badge_text = "⚠️ FALLBACK" if is_fallback else "✓ CONFIRMED"
     card_border = "#ef4444" if is_fallback else "#10b981"
     
-    # Card container with border
-    st.markdown(f"""
-    <div style="
-        border: 2px solid {card_border};
-        border-radius: 16px;
-        padding: 20px;
-        background: linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,41,59,0.9) 100%);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        margin-bottom: 16px;
-    ">
-        <!-- Header -->
-        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px;">
-            <div>
-                <div style="font-size: 28px; font-weight: 800; color: #f8fafc; letter-spacing: -1px;">{symbol}</div>
-                <div style="color: #64748b; font-size: 12px; margin-top: 4px;">📉 {direction} • {edge_type}</div>
-            </div>
-            <div style="
-                background: {badge_bg};
-                border: 1px solid {badge_color};
-                color: {badge_color};
-                padding: 6px 12px;
-                border-radius: 8px;
-                font-size: 11px;
-                font-weight: 600;
-            ">{badge_text}</div>
-        </div>
+    # Card container (use Streamlit container for isolation)
+    with st.container():
+        # Header using pure Streamlit  
+        col_sym, col_badge = st.columns([3, 1])
+        with col_sym:
+            st.markdown(f"### {symbol}")
+            st.caption(f"📉 {direction} • {edge_type}")
+        with col_badge:
+            if is_fallback:
+                st.error(badge_text)
+            else:
+                st.success(badge_text)
         
-        <!-- Metrics Grid -->
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;">
-            <div style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.3); border-radius: 8px; padding: 12px; text-align: center;">
-                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Cost</div>
-                <div style="color: #f59e0b; font-size: 22px; font-weight: 700;">${cost:.0f}</div>
-            </div>
-            <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 8px; padding: 12px; text-align: center;">
-                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Profit</div>
-                <div style="color: #10b981; font-size: 22px; font-weight: 700;">${max_profit:.0f}</div>
-            </div>
-            <div style="background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); border-radius: 8px; padding: 12px; text-align: center;">
-                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Loss</div>
-                <div style="color: #ef4444; font-size: 22px; font-weight: 700;">${max_loss:.0f}</div>
-            </div>
-            <div style="background: rgba(56,189,248,0.1); border: 1px solid rgba(56,189,248,0.3); border-radius: 8px; padding: 12px; text-align: center;">
-                <div style="color: #94a3b8; font-size: 10px; text-transform: uppercase;">Return</div>
-                <div style="color: #38bdf8; font-size: 22px; font-weight: 700;">{return_mult:.1f}x</div>
-            </div>
-        </div>
+        # Metrics using Streamlit columns with colored backgrounds via metrics
+        m1, m2, m3, m4 = st.columns(4)
+        with m1:
+            st.metric("💵 Cost", f"${cost:.0f}")
+        with m2:
+            st.metric("📈 Profit", f"${max_profit:.0f}")
+        with m3:
+            st.metric("📉 Loss", f"${max_loss:.0f}")
+        with m4:
+            st.metric("🎲 Return", f"{return_mult:.1f}x")
         
-        <!-- Footer -->
-        <div style="color: #64748b; font-size: 11px; margin-bottom: 12px;">
-            ⏰ {exp} ({dte} days) • 📊 {contracts} contracts
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-    
-    # Execute button (Streamlit native for interactivity)
-    can_execute = is_valid and contracts > 0
-    
-    if card_state == 'ready':
-        if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary", use_container_width=True):
-            st.session_state['card_states'][card_key] = 'confirmed'
-            st.rerun()
-    elif card_state == 'confirmed':
-        st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
-        if st.button("↩️ Cancel", key=f"cancel_{candidate_id}", use_container_width=True):
-            st.session_state['card_states'][card_key] = 'ready'
-            st.rerun()
+        # Footer
+        st.caption(f"⏰ {exp} ({dte} days) • 📊 {contracts} contracts")
+        
+        # Execute button (full width)
+        can_execute = is_valid and contracts > 0
+        
+        if card_state == 'ready':
+            if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary", use_container_width=True):
+                st.session_state['card_states'][card_key] = 'confirmed'
+                st.rerun()
+        elif card_state == 'confirmed':
+            st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
+            if st.button("↩️ Cancel", key=f"cancel_{candidate_id}", use_container_width=True):
+                st.session_state['card_states'][card_key] = 'ready'
+                st.rerun()
+        
+        st.divider()
 
 
 def render_trade_ticket(candidate: dict):
