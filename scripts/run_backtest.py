@@ -15,6 +15,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from backtest.deterministic import DeterministicBacktester
+from backtest.integrity import generate_integrity_report, print_integrity_report
 
 
 def main():
@@ -64,6 +65,12 @@ def main():
         "--csv",
         action="store_true",
         help="Export trades to CSV"
+    )
+    parser.add_argument(
+        "--integrity",
+        action="store_true",
+        default=True,
+        help="Show integrity report (default: True)"
     )
     
     args = parser.parse_args()
@@ -123,6 +130,20 @@ def main():
             print("\nBY EDGE TYPE:")
             for edge, data in m.by_edge_type.items():
                 print(f"  {edge}: {data['trades']} trades, ${data['pnl']:.2f}, {data['win_rate']:.0f}% win")
+        
+        if m.by_structure:
+            print("\nBY STRUCTURE TYPE:")
+            for struct, data in m.by_structure.items():
+                print(f"  {struct}: {data['trades']} trades, ${data['pnl']:.2f}, {data['win_rate']:.0f}% win")
+        
+        # Integrity report
+        if args.integrity:
+            integrity = generate_integrity_report(result)
+            print_integrity_report(integrity)
+            
+            if not integrity.passed:
+                print("\n⚠️  INTEGRITY CHECK FAILED - Results may not be reliable")
+                
     else:
         print("No trades generated. Check:")
         print("  - Report files exist in logs/reports/")

@@ -1,5 +1,9 @@
-# Backtest Configuration
-# Deterministic exit rules + cost model
+# Backtest Configuration v2
+# Structure-specific exit rules + consistent execution model
+
+# ============================================================
+# SLIPPAGE & COMMISSIONS
+# ============================================================
 
 slippage:
   # Slippage per leg in dollars (added to debit, subtracted from credit)
@@ -10,35 +14,62 @@ commissions:
   per_contract: 0.65
   # Minimum per order
   min_per_order: 0.00
+  # Reg fee per contract (estimate)
+  reg_fee_per_contract: 0.02
+
+# ============================================================
+# EXIT RULES - STRUCTURE SPECIFIC
+# ============================================================
 
 exit_rules:
+  # Credit spread rules (e.g., bull put spread from steep skew)
   credit_spread:
     # Take profit at X% of credit received
+    # At 50% profit, close to lock in gains
     take_profit_pct: 50
-    # Stop loss at Yx credit (e.g., 2.0 = 2x credit = 100% of spread width)
+    # Stop loss at Yx credit (e.g., 2.0 = 2x credit = position worth 3x original)
+    # If received $1.00 credit, stop at $2.00 loss (spread worth $3.00)
     stop_loss_mult: 2.0
-    # Time stop: exit if DTE <= X
-    time_stop_dte: 5
-    # Max hold days (0 = hold to expiry)
+    # Time stop: exit if DTE <= X (manage gamma risk)
+    time_stop_dte: 21
+    # Max hold days (0 = hold based on DTE stop only)
     max_hold_days: 0
   
+  # Debit spread rules (e.g., bear put spread from flat skew)
   debit_spread:
     # Take profit at X% of max profit
-    take_profit_pct: 100
+    # Max profit = spread width - debit paid
+    take_profit_pct: 50
     # Stop loss at X% of debit paid
+    # If paid $2.00 debit, stop at $1.00 loss
     stop_loss_pct: 50
-    # Time stop: exit if DTE <= X
-    time_stop_dte: 5
+    # Time stop: exit if DTE <= X (debit spreads need more time to work)
+    time_stop_dte: 7
     # Max hold days
     max_hold_days: 0
 
-# Backtest defaults
+# ============================================================
+# DEFAULTS
+# ============================================================
+
 defaults:
   # Default lookback for backtest
   lookback_days: 90
-  # Require minimum edge strength
+  # Require minimum edge strength (0.5 = 50%)
   min_edge_strength: 0.50
-  # Only include TRADE recommendations
+  # Only include TRADE recommendations (not REVIEW)
   trade_only: true
-  # Core universe only
+  # Core universe for backtesting
   symbols: ["SPY", "QQQ", "IWM", "TLT"]
+
+# ============================================================
+# VALIDATION REQUIREMENTS
+# ============================================================
+
+validation:
+  # Require percentile-based signals only (no fallback)
+  require_history_mode: true
+  # Minimum skew history days for valid percentile
+  min_history_days: 20
+  # Fail if any trade uses history_mode=0
+  fail_on_fallback: true
