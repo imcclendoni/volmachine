@@ -763,13 +763,70 @@ def render_trade_card(candidate: dict):
         
         if card_state == 'ready':
             if st.button(f"🚀 EXECUTE {symbol}", key=f"exec_{candidate_id}", disabled=not can_execute, type="primary", use_container_width=True):
-                st.session_state['card_states'][card_key] = 'confirmed'
+                st.session_state['card_states'][card_key] = 'previewing'
                 st.rerun()
-        elif card_state == 'confirmed':
-            st.success(f"✅ {symbol} CONFIRMED - Ready for IBKR")
-            if st.button("↩️ Cancel", key=f"cancel_{candidate_id}", use_container_width=True):
+        elif card_state == 'previewing':
+            # IBKR Preview step
+            st.warning(f"⏳ Connecting to IBKR to preview {symbol} order...")
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['python3', 'scripts/submit_test_order.py', '--paper', '--dry-run', '--symbol', symbol],
+                    capture_output=True, text=True, timeout=60, cwd=str(Path(__file__).parent.parent)
+                )
+                if result.returncode == 0:
+                    st.session_state['card_states'][card_key] = 'confirmed'
+                    st.session_state[f'preview_{card_key}'] = result.stdout
+                    st.rerun()
+                else:
+                    st.error(f"Preview failed: {result.stderr or result.stdout}")
+                    st.session_state['card_states'][card_key] = 'ready'
+            except Exception as e:
+                st.error(f"IBKR connection error: {e}")
                 st.session_state['card_states'][card_key] = 'ready'
-                st.rerun()
+        elif card_state == 'confirmed':
+            # Show preview results
+            preview_output = st.session_state.get(f'preview_{card_key}', '')
+            if preview_output:
+                with st.expander("📋 Order Preview", expanded=True):
+                    st.code(preview_output[-2000:], language="text")
+            
+            st.success(f"✅ {symbol} Preview OK - Ready to submit")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button(f"🚀 SUBMIT TO IBKR", key=f"submit_{candidate_id}", type="primary", use_container_width=True):
+                    st.session_state['card_states'][card_key] = 'submitting'
+                    st.rerun()
+            with col2:
+                if st.button("↩️ Cancel", key=f"cancel_{candidate_id}", use_container_width=True):
+                    st.session_state['card_states'][card_key] = 'ready'
+                    st.rerun()
+        elif card_state == 'submitting':
+            # Actually submit to IBKR
+            st.warning(f"🚀 Submitting {symbol} to IBKR...")
+            try:
+                import subprocess
+                result = subprocess.run(
+                    ['python3', 'scripts/submit_test_order.py', '--paper', '--submit', '--symbol', symbol],
+                    capture_output=True, text=True, timeout=90, cwd=str(Path(__file__).parent.parent)
+                )
+                if result.returncode == 0 and 'Recorded to blotter' in result.stdout:
+                    st.session_state['card_states'][card_key] = 'submitted'
+                    st.session_state[f'submit_{card_key}'] = result.stdout
+                    st.rerun()
+                else:
+                    st.error(f"Submit failed: {result.stderr or result.stdout}")
+                    st.session_state['card_states'][card_key] = 'confirmed'
+            except Exception as e:
+                st.error(f"IBKR submission error: {e}")
+                st.session_state['card_states'][card_key] = 'confirmed'
+        elif card_state == 'submitted':
+            submit_output = st.session_state.get(f'submit_{card_key}', '')
+            st.success(f"✅ {symbol} ORDER SUBMITTED!")
+            with st.expander("📋 Submission Details"):
+                st.code(submit_output[-2000:], language="text")
+            st.info("Check Blotter tab for trade tracking")
         
         st.divider()
 
@@ -1469,6 +1526,136 @@ def render_blotter_tab():
                 """, unsafe_allow_html=True)
 
 
+def render_edge_history_tab():
+    """
+    Render Edge History tab - shows past signals from run logs.
+    
+    Reads trade_candidate events from logs/runs/*.jsonl to track:
+    - All edges found (traded or not)
+    - What would have happened
+    """
+    import glob
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7)); 
+                border: 1px solid rgba(71,85,105,0.4); border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 2rem;">📜</span>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">EDGE HISTORY</div>
+                <div style="color: #94a3b8; font-size: 0.9rem;">Past signals found by the engine</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Read all run logs
+    logs_dir = Path(__file__).parent.parent / 'logs' / 'runs'
+    log_files = sorted(glob.glob(str(logs_dir / 'run_*.jsonl')), reverse=True)[:30]  # Last 30 runs
+    
+    edges = []
+    for log_file in log_files:
+        try:
+            with open(log_file, 'r') as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        if entry.get('event') == 'trade_candidate':
+                            data = entry.get('data', {})
+                            edges.append({
+                                'timestamp': data.get('timestamp', entry.get('timestamp', ''))[:16],
+                                'symbol': data.get('symbol', ''),
+                                'edge_type': data.get('edge', {}).get('type', ''),
+                                'strength': data.get('edge', {}).get('strength', 0),
+                                'percentile': data.get('edge', {}).get('metrics', {}).get('skew_percentile', 0),
+                                'direction': data.get('edge', {}).get('direction', ''),
+                                'recommendation': data.get('recommendation', ''),
+                                'structure': data.get('structure', {}).get('type', ''),
+                                'max_loss': data.get('structure', {}).get('max_loss_dollars', 0),
+                                'max_profit': data.get('structure', {}).get('max_profit_dollars', 0),
+                                'regime': data.get('regime', {}).get('state', ''),
+                                'rationale': data.get('edge', {}).get('rationale', ''),
+                            })
+                    except:
+                        pass
+        except:
+            pass
+    
+    if not edges:
+        st.info("No edge history found. Run the engine to generate signals.")
+        return
+    
+    # Summary
+    total_edges = len(edges)
+    trade_edges = len([e for e in edges if e['recommendation'] == 'TRADE'])
+    pass_edges = len([e for e in edges if e['recommendation'] == 'PASS'])
+    
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Total Edges", total_edges)
+    with c2:
+        st.metric("TRADE Signals", trade_edges)
+    with c3:
+        st.metric("PASS Signals", pass_edges)
+    with c4:
+        trade_rate = (trade_edges / total_edges * 100) if total_edges > 0 else 0
+        st.metric("Trade Rate", f"{trade_rate:.0f}%")
+    
+    st.markdown("---")
+    
+    # Filter
+    filter_col1, filter_col2 = st.columns(2)
+    with filter_col1:
+        symbol_filter = st.selectbox("Filter by Symbol", ["ALL"] + list(set(e['symbol'] for e in edges)))
+    with filter_col2:
+        rec_filter = st.selectbox("Filter by Recommendation", ["ALL", "TRADE", "PASS"])
+    
+    # Apply filters
+    filtered = edges
+    if symbol_filter != "ALL":
+        filtered = [e for e in filtered if e['symbol'] == symbol_filter]
+    if rec_filter != "ALL":
+        filtered = [e for e in filtered if e['recommendation'] == rec_filter]
+    
+    st.markdown(f"**Showing {len(filtered)} signals**")
+    
+    # Display edges
+    for edge in filtered[:50]:  # Show last 50
+        rec = edge['recommendation']
+        rec_color = "#10b981" if rec == "TRADE" else "#f59e0b" if rec == "PASS" else "#64748b"
+        
+        strength_pct = edge['strength'] * 100
+        percentile = edge['percentile']
+        
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.5); border-left: 4px solid {rec_color}; 
+                    padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <span style="color: #3b82f6; font-weight: 700; font-size: 1.2rem;">{edge['symbol']}</span>
+                    <span style="color: {rec_color}; margin-left: 12px; font-weight: 600;">{rec}</span>
+                    <span style="color: #64748b; margin-left: 12px;">{edge['edge_type']}</span>
+                </div>
+                <div style="text-align: right;">
+                    <div style="color: #f1f5f9; font-size: 0.9rem;">{edge['timestamp']}</div>
+                    <div style="color: #64748b; font-size: 0.8rem;">{edge['regime']}</div>
+                </div>
+            </div>
+            <div style="margin-top: 8px; color: #94a3b8; font-size: 0.85rem;">
+                Strength: {strength_pct:.0f}% | Percentile: {percentile:.0f}% | {edge['direction']}
+            </div>
+            <div style="margin-top: 4px; color: #64748b; font-size: 0.8rem;">
+                {edge['structure'] or 'No structure'} | Max Loss: ${edge['max_loss']:.0f} | Max Profit: ${edge['max_profit']:.0f}
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        with st.expander("View Rationale"):
+            st.write(edge['rationale'])
+
+
 def main():
     # SIDEBAR NAVIGATION
     with st.sidebar:
@@ -1481,7 +1668,7 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "📊 Blotter"],
+            ["📈 Dashboard", "📊 Blotter", "📜 Edge History"],
             label_visibility="collapsed"
         )
         
@@ -1491,6 +1678,9 @@ def main():
     # ROUTE TO PAGE
     if page == "📊 Blotter":
         render_blotter_tab()
+        return
+    elif page == "📜 Edge History":
+        render_edge_history_tab()
         return
     
     # HEADLINE
