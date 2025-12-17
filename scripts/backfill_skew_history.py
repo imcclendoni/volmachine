@@ -208,14 +208,30 @@ def fetch_option_chain_summary(symbol: str, api_key: str, as_of: date, target_dt
 
 def main():
     parser = argparse.ArgumentParser(description="Backfill skew history")
-    parser.add_argument('--days', type=int, default=30, help='Days of history (default: 30)')
-    parser.add_argument('--symbols', type=str, default='SPY,QQQ,IWM,TLT',
-                        help='Comma-separated symbols (default: SPY,QQQ,IWM,TLT)')
+    parser.add_argument('--days', type=int, default=90, help='Days of history (default: 90)')
+    parser.add_argument('--symbols', type=str, default='ALL_ENABLED',
+                        help='Comma-separated symbols or ALL_ENABLED (default: ALL_ENABLED)')
     parser.add_argument('--output', type=str, default='./logs/edge_health/skew_histories.json')
     parser.add_argument('--min-history-days', type=int, default=30)
     args = parser.parse_args()
     
-    symbols = [s.strip().upper() for s in args.symbols.split(',')]
+    # Resolve symbols
+    if args.symbols.upper() == 'ALL_ENABLED':
+        # Read from universe.yaml
+        universe_path = Path('./config/universe.yaml')
+        if universe_path.exists():
+            with open(universe_path) as f:
+                universe = yaml.safe_load(f)
+            symbols = [
+                s for s, cfg in universe.get('symbols', {}).items()
+                if cfg.get('enabled', False)
+            ]
+            print(f"📂 Loaded {len(symbols)} enabled symbols from universe.yaml")
+        else:
+            symbols = ['SPY', 'QQQ', 'IWM', 'TLT']
+            print("⚠️ universe.yaml not found, using defaults")
+    else:
+        symbols = [s.strip().upper() for s in args.symbols.split(',')]
     
     print("=" * 60)
     print("Skew History Backfill")
