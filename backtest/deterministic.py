@@ -379,16 +379,13 @@ class DeterministicBacktester:
             mfe = max(mfe, mtm_pnl)
             mae = min(mae, mtm_pnl)
             
-            # Check exit conditions
+            # Check exit conditions in priority order:
+            # 1. Take profit (primary goal)
+            # 2. Stop loss
+            # 3. Time stop (secondary, only if no TP/SL)
             dte = (expiry - current).days
             
-            # Time stop
-            if dte <= time_stop_dte:
-                exit_date = current
-                exit_reason = ExitReason.TIME_STOP
-                break
-            
-            # Take profit
+            # 1. Take profit (highest priority)
             if spread_type == 'credit':
                 # For credit: profit when we can buy back cheaper
                 if exit_net >= tp_target:
@@ -402,10 +399,16 @@ class DeterministicBacktester:
                     exit_reason = ExitReason.TAKE_PROFIT
                     break
             
-            # Stop loss
+            # 2. Stop loss
             if mtm_pnl <= sl_threshold * 100:
                 exit_date = current
                 exit_reason = ExitReason.STOP_LOSS
+                break
+            
+            # 3. Time stop (only if TP/SL not hit)
+            if dte <= time_stop_dte:
+                exit_date = current
+                exit_reason = ExitReason.TIME_STOP
                 break
             
             current += timedelta(days=1)
