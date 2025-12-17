@@ -247,76 +247,103 @@ def find_priced_spread(ib: IB) -> tuple[Option, Option, float, float, float]:
     raise ValueError("Could not find a spread with Polygon pricing data")
 
 
+def determine_spread_type(long_price: float, short_price: float) -> tuple[str, float]:
+    """
+    Determine if spread is credit or debit based on leg prices.
+    
+    Returns: (spread_type, net_premium)
+    - 'credit': short_price > long_price, we receive premium
+    - 'debit': long_price > short_price, we pay premium
+    """
+    if short_price > long_price:
+        net_credit = short_price - long_price
+        return 'credit', net_credit
+    else:
+        net_debit = long_price - short_price
+        return 'debit', net_debit
+
+
 def calculate_combo_limit(long_price: float, short_price: float, width: float, 
-                          spread_type: str = 'debit', slippage: float = 0.10) -> float:
+                          slippage: float = 0.10) -> tuple[str, float]:
     """
     Calculate combo limit price from leg closes.
     
-    For debit spread: debit = long_price - short_price (we pay more for long)
-    For credit spread: credit = short_price - long_price (we receive more for short)
+    Returns: (spread_type, limit_price)
+    - spread_type: 'credit' or 'debit'
+    - limit_price: always positive
     """
     print("\n💰 Calculating combo limit price...")
     
-    if spread_type == 'debit':
-        # Debit spread: we buy the long, sell the short
-        # Net debit = what we pay for long - what we receive for short
-        est_debit = long_price - short_price
-        print(f"   Estimated debit: ${est_debit:.2f} (long ${long_price:.2f} - short ${short_price:.2f})")
-        
-        if est_debit <= 0:
-            # Actually a credit, swap interpretation
-            print(f"   ⚠️ Spread is actually a credit, adjusting...")
-            est_credit = abs(est_debit)
-            limit = round(est_credit * (1 - slippage), 2)
-            print(f"   Credit limit: ${limit:.2f} (with {slippage*100:.0f}% slippage)")
-            return -limit  # Negative for credit
-        
-        # Add slippage buffer (willing to pay more)
-        limit = round(est_debit * (1 + slippage), 2)
-        
-    else:  # credit
-        est_credit = short_price - long_price
-        print(f"   Estimated credit: ${est_credit:.2f}")
-        
-        if est_credit <= 0:
-            raise ValueError(f"Invalid credit ${est_credit:.2f} - would be a debit")
-        
-        # Subtract slippage buffer (accept less)
-        limit = round(est_credit * (1 - slippage), 2)
+    # Determine spread type
+    spread_type, net_premium = determine_spread_type(long_price, short_price)
     
-    # Sanity check
-    if abs(limit) > width:
-        print(f"   ⚠️ Limit ${limit:.2f} exceeds width ${width:.2f}, capping...")
-        limit = width * 0.9 if limit > 0 else -width * 0.9
+    print(f"   Spread type: {spread_type.upper()}")
+    print(f"   Long price: ${long_price:.2f}")
+    print(f"   Short price: ${short_price:.2f}")
+    print(f"   Net premium: ${net_premium:.2f}")
     
-    print(f"   ✅ Limit price: ${abs(limit):.2f} {'debit' if limit > 0 else 'credit'}")
+    # Guardrail: reject if net is invalid
+    if net_premium <= 0:
+        raise ValueError(f"Invalid net premium ${net_premium:.2f} for {spread_type} spread")
     
-    return limit
+    if net_premium != net_premium:  # NaN check
+        raise ValueError("Net premium is NaN - cannot price")
+    
+    # Apply slippage
+    if spread_type == 'credit':
+        # Credit spread: we receive less (worse fill)
+        limit = round(net_premium * (1 - slippage), 2)
+        print(f"   Credit limit: ${limit:.2f} (accepting {slippage*100:.0f}% less)")
+    else:
+        # Debit spread: we pay more (worse fill)
+        limit = round(net_premium * (1 + slippage), 2)
+        print(f"   Debit limit: ${limit:.2f} (paying {slippage*100:.0f}% more)")
+    
+    # Guardrail: limit can't exceed width
+    if limit > width:
+        print(f"   ⚠️ Limit ${limit:.2f} exceeds width ${width:.2f}, capping to 90%...")
+        limit = round(width * 0.9, 2)
+    
+    # Guardrail: limit must be positive
+    if limit <= 0:
+        raise ValueError(f"Invalid limit ${limit:.2f} - must be positive")
+    
+    print(f"   ✅ Order: {spread_type.upper()} @ ${limit:.2f}")
+    
+    return spread_type, limit
 
 
 def create_combo_order(long_leg: Option, short_leg: Option, quantity: int, 
-                       limit_price: float) -> tuple[Contract, Order]:
-    """Create BAG contract and limit order."""
+                       spread_type: str, limit_price: float) -> tuple[Contract, Order]:
+    """
+    Create BAG contract and limit order.
+    
+    For CREDIT spread: order.action = 'SELL' (sell the spread to receive credit)
+    For DEBIT spread: order.action = 'BUY' (buy the spread, pay debit)
+    """
     print("\n📦 Creating BAG combo...")
     
     if not long_leg.conId or not short_leg.conId:
         raise ValueError(f"Invalid conIds: long={long_leg.conId}, short={short_leg.conId}")
     
-    # Create BAG
+    if limit_price <= 0:
+        raise ValueError(f"Invalid limit price: ${limit_price}")
+    
+    # Create BAG contract
     bag = Contract()
     bag.symbol = 'SPY'
     bag.secType = 'BAG'
     bag.exchange = 'SMART'
     bag.currency = 'USD'
     
-    # Long leg (buy)
+    # Long leg (always BUY the lower strike)
     long_combo = ComboLeg()
     long_combo.conId = long_leg.conId
     long_combo.ratio = 1
     long_combo.action = 'BUY'
     long_combo.exchange = 'SMART'
     
-    # Short leg (sell)
+    # Short leg (always SELL the higher strike)
     short_combo = ComboLeg()
     short_combo.conId = short_leg.conId
     short_combo.ratio = 1
@@ -325,17 +352,24 @@ def create_combo_order(long_leg: Option, short_leg: Option, quantity: int,
     
     bag.comboLegs = [long_combo, short_combo]
     
-    # Create order
+    # Create order with correct action
     order = Order()
-    order.action = 'BUY'  # Buy the spread
+    
+    if spread_type == 'credit':
+        # SELL the spread to receive credit
+        order.action = 'SELL'
+    else:
+        # BUY the spread, pay debit
+        order.action = 'BUY'
+    
     order.orderType = 'LMT'
     order.totalQuantity = quantity
-    order.lmtPrice = abs(limit_price)
+    order.lmtPrice = limit_price
     order.tif = 'DAY'
     
     print(f"   Long leg: conId={long_leg.conId} (BUY)")
     print(f"   Short leg: conId={short_leg.conId} (SELL)")
-    print(f"   Order: BUY {quantity} @ ${abs(limit_price):.2f} LMT")
+    print(f"   Order: {order.action} {quantity} @ ${limit_price:.2f} LMT ({spread_type})")
     
     return bag, order
 
@@ -387,12 +421,13 @@ def main():
         # Find spread with Polygon pricing
         long_put, short_put, width, long_price, short_price = find_priced_spread(ib)
         
-        # Calculate limit
-        limit = calculate_combo_limit(long_price, short_price, width, 
-                                      spread_type='debit', slippage=args.slippage)
+        # Calculate limit (returns spread_type and limit)
+        spread_type, limit = calculate_combo_limit(long_price, short_price, width, 
+                                                    slippage=args.slippage)
         
-        # Create order
-        bag, order = create_combo_order(long_put, short_put, args.quantity, limit)
+        # Create order with correct action for spread type
+        bag, order = create_combo_order(long_put, short_put, args.quantity, 
+                                         spread_type, limit)
         
         # Preview only
         result = preview_order(ib, bag, order)
