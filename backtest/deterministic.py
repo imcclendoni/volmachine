@@ -443,10 +443,12 @@ class DeterministicBacktester:
             # 3. Time stop (secondary, only if no TP/SL)
             dte = (expiry - current).days
             
-            # 1. Take profit (highest priority)
+            # 1. Take profit (highest priority) - based on PnL, not exit_net
             if spread_type == 'credit':
-                # For credit: profit when we can buy back cheaper
-                if exit_net >= tp_target:
+                # For credit: TP when we've captured tp_pct of credit
+                # e.g., entry credit $1.50, tp_pct=50 -> TP at $75 profit
+                tp_threshold = credit_received * (tp_pct / 100) * 100  # In dollars
+                if mtm_pnl >= tp_threshold:
                     exit_date = current
                     exit_reason = ExitReason.TAKE_PROFIT
                     break
@@ -457,7 +459,7 @@ class DeterministicBacktester:
                     exit_reason = ExitReason.TAKE_PROFIT
                     break
             
-            # 2. Stop loss
+            # 2. Stop loss - based on PnL
             if mtm_pnl <= sl_threshold * 100:
                 exit_date = current
                 exit_reason = ExitReason.STOP_LOSS
