@@ -173,13 +173,18 @@ class DeterministicBacktester:
         # Find all report files in range
         current = start_date
         while current <= end_date:
-            # Try all filename patterns including backfill
+            # Try all filename patterns including backfill (support both old and new naming)
+            date_str = current.isoformat()
             patterns = [
-                self.reports_dir / f'{current.isoformat()}.json',
-                self.reports_dir / f'{current.isoformat()}_open.json',
-                self.reports_dir / f'{current.isoformat()}_close.json',
-                self.reports_dir / f'{current.isoformat()}_backfill.json',
+                self.reports_dir / f'{date_str}.json',
+                self.reports_dir / f'{date_str}_open.json',
+                self.reports_dir / f'{date_str}_close.json',
+                self.reports_dir / f'{date_str}_backfill.json',  # Old format
             ]
+            
+            # Add new format: YYYY-MM-DD__SYMBOL__backfill.json using glob
+            for p in self.reports_dir.glob(f'{date_str}__*__backfill.json'):
+                patterns.append(p)
             
             for report_path in patterns:
                 if not report_path.exists():

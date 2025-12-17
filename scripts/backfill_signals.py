@@ -624,8 +624,8 @@ def save_backfill_report(
         }],
     }
     
-    # Use execution_date for filename (next-day execution)
-    filename = f"{execution_date.isoformat()}_backfill.json"
+    # Use execution_date + symbol for filename to prevent overwrites
+    filename = f"{execution_date.isoformat()}__{symbol}__backfill.json"
     path = output_dir / filename
     
     with open(path, 'w') as f:
