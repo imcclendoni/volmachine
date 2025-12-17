@@ -679,9 +679,11 @@ def main():
     parser = argparse.ArgumentParser(
         description="Backfill historical signals v4 - research-correct with width cascade"
     )
-    parser.add_argument("--days", type=int, default=90)
-    parser.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "IWM"])  # TLT excluded by default
-    parser.add_argument("--output", default="./logs/backfill/v4/reports")  # v4 dedicated directory
+    parser.add_argument("--days", type=int, default=90, help="Number of days to backfill")
+    parser.add_argument("--years", type=int, default=None, help="Number of years to backfill (overrides --days)")
+    parser.add_argument("--start", type=str, default=None, help="Start date YYYY-MM-DD (overrides --days/--years)")
+    parser.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "IWM"])
+    parser.add_argument("--output", default="./logs/backfill/v4/reports")
     parser.add_argument("--delay", type=float, default=0.15)
     parser.add_argument("--build-history", action="store_true", help="Build skew history only")
     
@@ -695,8 +697,14 @@ def main():
     output_dir = Path(args.output)
     output_dir.mkdir(parents=True, exist_ok=True)
     
+    # Calculate date range
     end_date = date.today() - timedelta(days=1)
-    start_date = end_date - timedelta(days=args.days)
+    if args.start:
+        start_date = date.fromisoformat(args.start)
+    elif args.years:
+        start_date = end_date - timedelta(days=args.years * 365)
+    else:
+        start_date = end_date - timedelta(days=args.days)
     
     print(f"=== Signal Backfill v4 (width cascade, mean-reversion gating) ===")
     print(f"Period: {start_date} to {end_date}")

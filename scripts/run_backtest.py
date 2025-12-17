@@ -29,6 +29,12 @@ def main():
         help="Number of days to backtest (default: 90)"
     )
     parser.add_argument(
+        "--years",
+        type=int,
+        default=None,
+        help="Number of years to backtest (overrides --days)"
+    )
+    parser.add_argument(
         "--start",
         type=str,
         default=None,
@@ -87,6 +93,8 @@ def main():
     
     if args.start:
         start_date = date.fromisoformat(args.start)
+    elif args.years:
+        start_date = end_date - timedelta(days=args.years * 365)
     else:
         start_date = end_date - timedelta(days=args.days)
     
@@ -143,6 +151,67 @@ def main():
             print("\nBY STRUCTURE TYPE:")
             for struct, data in m.by_structure.items():
                 print(f"  {struct}: {data['trades']} trades, ${data['pnl']:.2f}, {data['win_rate']:.0f}% win")
+        
+        # Multi-year validation metrics
+        period_days = (end_date - start_date).days
+        years = period_days / 365.0
+        if years >= 1.0 and m.total_trades > 0:
+            print("\n" + "=" * 60)
+            print("VALIDATION METRICS")
+            print("=" * 60)
+            
+            # Trades per year
+            trades_per_year = m.total_trades / years
+            print(f"\n📅 Trades per year: {trades_per_year:.1f}")
+            
+            # Calculate CAGR (assuming $10k starting)
+            starting_capital = 10000.0
+            ending_capital = starting_capital + m.total_pnl
+            if ending_capital > 0 and years > 0:
+                cagr = ((ending_capital / starting_capital) ** (1.0 / years) - 1) * 100
+                print(f"📈 CAGR (on $10k): {cagr:.1f}%")
+            
+            # Max drawdown %
+            if ending_capital > 0:
+                max_dd_pct = (m.max_drawdown / starting_capital) * 100
+                print(f"📉 Max DD %: {max_dd_pct:.1f}%")
+            
+            # Worst consecutive loss streak
+            if result.trades:
+                current_streak = 0
+                worst_streak = 0
+                worst_streak_loss = 0.0
+                current_loss = 0.0
+                
+                for trade in result.trades:
+                    if trade.net_pnl < 0:
+                        current_streak += 1
+                        current_loss += trade.net_pnl
+                        if current_streak > worst_streak:
+                            worst_streak = current_streak
+                            worst_streak_loss = current_loss
+                    else:
+                        current_streak = 0
+                        current_loss = 0.0
+                
+                print(f"🔴 Worst loss streak: {worst_streak} trades (${worst_streak_loss:.2f})")
+            
+            # Equity curve snapshot (high/low)
+            if result.trades:
+                equity = 0.0
+                peak = 0.0
+                trough = 0.0
+                
+                for trade in result.trades:
+                    equity += trade.net_pnl
+                    if equity > peak:
+                        peak = equity
+                    if equity < trough:
+                        trough = equity
+                
+                print(f"💹 Equity peak: ${peak:.2f}")
+                print(f"💹 Equity trough: ${trough:.2f}")
+                print(f"💹 Final equity: ${equity:.2f}")
         
         # Integrity report
         if args.integrity:
