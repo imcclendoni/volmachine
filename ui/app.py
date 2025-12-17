@@ -778,18 +778,27 @@ def render_trade_card(candidate: dict):
                 
                 # Check if running on cloud without ib_insync
                 if 'ib_insync' in output or 'ModuleNotFoundError' in output:
-                    st.error("⚠️ **IBKR execution only works locally**")
-                    st.info("""
-                    **To execute trades:**
-                    1. Run Streamlit locally: `streamlit run ui/app.py`
-                    2. Start IBKR Gateway on port 4002
-                    3. Click EXECUTE again
+                    st.error("🔒 **LOCAL ONLY** - IBKR execution requires local setup")
                     
-                    **Or use terminal:**
-                    ```
-                    python3 scripts/submit_test_order.py --paper --submit --symbol """ + symbol + """
-                    ```
-                    """)
+                    # Generate the command
+                    cmd = f"python3 scripts/submit_test_order.py --paper --submit --symbol {symbol}"
+                    
+                    st.markdown("**Quick Execute:** Copy this command and run in your local terminal:")
+                    st.code(cmd, language="bash")
+                    
+                    # Copy button
+                    if st.button("📋 Copy Command", key=f"copy_{candidate_id}"):
+                        st.session_state['copied_cmd'] = cmd
+                        st.success("✅ Copied! Paste in terminal and press Enter")
+                    
+                    with st.expander("Setup Instructions"):
+                        st.markdown("""
+                        1. Start IBKR Gateway on port 4002
+                        2. Open terminal in volmachine folder
+                        3. Paste the command above
+                        4. Check Blotter tab for confirmation
+                        """)
+                    
                     st.session_state['card_states'][card_key] = 'ready'
                 elif result.returncode == 0:
                     st.session_state['card_states'][card_key] = 'confirmed'
