@@ -108,8 +108,30 @@ class DeterministicBacktester:
         trade_only = self.config.get('defaults', {}).get('trade_only', True)
         
         # Load signals from saved reports
-        signals = self._load_signals(start_date, end_date, symbols, min_strength, trade_only)
-        print(f"Found {len(signals)} signals in date range")
+        signals, drop_counts = self._load_signals(start_date, end_date, symbols, min_strength, trade_only)
+        
+        # Print drop accounting
+        print(f"SIGNAL LOADING:")
+        print(f"  Files found: {drop_counts['files_found']}")
+        print(f"  Candidates parsed: {drop_counts['candidates_parsed']}")
+        print(f"  Dropped:")
+        if drop_counts['disabled_symbol'] > 0:
+            print(f"    - Disabled symbol: {drop_counts['disabled_symbol']}")
+        if drop_counts['not_in_enabled_symbols'] > 0:
+            print(f"    - Not in enabled symbols: {drop_counts['not_in_enabled_symbols']}")
+        if drop_counts['not_in_backtest_symbols'] > 0:
+            print(f"    - Not in backtest symbols: {drop_counts['not_in_backtest_symbols']}")
+        if drop_counts['recommendation_filtered'] > 0:
+            print(f"    - Recommendation != TRADE: {drop_counts['recommendation_filtered']}")
+        if drop_counts['strength_below_threshold'] > 0:
+            print(f"    - Strength below threshold: {drop_counts['strength_below_threshold']}")
+        if drop_counts['debit_filtered'] > 0:
+            print(f"    - Debit spread filtered: {drop_counts['debit_filtered']}")
+        if drop_counts['credit_filtered'] > 0:
+            print(f"    - Credit spread filtered: {drop_counts['credit_filtered']}")
+        print(f"  Passed filters: {drop_counts['passed_filters']}")
+        print(f"  Signals to simulate: {len(signals)}")
+        print()
         
         if not signals:
             return self._empty_result(start_date, end_date, signals_source)
@@ -150,13 +172,29 @@ class DeterministicBacktester:
         symbols: List[str],
         min_strength: float,
         trade_only: bool,
-    ) -> List[Dict[str, Any]]:
+    ) -> tuple:
         """
         Load signals from saved daily reports.
         
         Applies strategy toggles and symbol gates from config.
+        Returns (signals, drop_counts) for accounting.
         """
         signals = []
+        
+        # Drop accounting
+        drop_counts = {
+            'files_found': 0,
+            'candidates_parsed': 0,
+            'not_in_date_range': 0,
+            'disabled_symbol': 0,
+            'not_in_enabled_symbols': 0,
+            'not_in_backtest_symbols': 0,
+            'recommendation_filtered': 0,
+            'strength_below_threshold': 0,
+            'debit_filtered': 0,
+            'credit_filtered': 0,
+            'passed_filters': 0,
+        }
         
         # Get strategy config
         strategies_config = self.config.get('strategies', {})
@@ -190,6 +228,8 @@ class DeterministicBacktester:
                 if not report_path.exists():
                     continue
                 
+                drop_counts['files_found'] += 1
+                
                 try:
                     with open(report_path, 'r') as f:
                         report = json.load(f)
@@ -197,24 +237,30 @@ class DeterministicBacktester:
                     candidates = report.get('candidates', [])
                     
                     for candidate in candidates:
+                        drop_counts['candidates_parsed'] += 1
                         symbol = candidate.get('symbol', '')
                         
                         # Filter by symbol (use strategy-specific gate if available)
                         if symbol in disabled_symbols:
+                            drop_counts['disabled_symbol'] += 1
                             continue
                         if enabled_symbols and symbol not in enabled_symbols:
+                            drop_counts['not_in_enabled_symbols'] += 1
                             continue
                         if symbol not in symbols:
+                            drop_counts['not_in_backtest_symbols'] += 1
                             continue
                         
                         # Filter by recommendation
                         if trade_only and candidate.get('recommendation', '') != 'TRADE':
+                            drop_counts['recommendation_filtered'] += 1
                             continue
                         
                         # Filter by edge strength
                         edge = candidate.get('edge', {})
                         strength = edge.get('strength', 0)
                         if strength < min_strength:
+                            drop_counts['strength_below_threshold'] += 1
                             continue
                         
                         # Filter by structure type (strategy toggle)
@@ -222,16 +268,23 @@ class DeterministicBacktester:
                         spread_type = structure.get('spread_type', structure.get('type', ''))
                         
                         if spread_type == 'credit' and not enable_credit:
+                            drop_counts['credit_filtered'] += 1
                             continue
                         if spread_type == 'debit' and not enable_debit:
+                            drop_counts['debit_filtered'] += 1
                             continue
                         
                         # Also check structure.type for credit_spread/debit_spread
                         struct_type = structure.get('type', '')
                         if 'credit' in struct_type and not enable_credit:
+                            drop_counts['credit_filtered'] += 1
                             continue
                         if 'debit' in struct_type and not enable_debit:
+                            drop_counts['debit_filtered'] += 1
                             continue
+                        
+                        # Passed all filters
+                        drop_counts['passed_filters'] += 1
                         
                         # Add signal with date context
                         signals.append({
@@ -246,7 +299,7 @@ class DeterministicBacktester:
             
             current += timedelta(days=1)
         
-        return signals
+        return signals, drop_counts
     
     def _simulate_trade(self, signal: Dict[str, Any]) -> Optional[BacktestTrade]:
         """
