@@ -643,6 +643,32 @@ def render_trade_card(candidate: dict):
             elif rationale and isinstance(rationale, str):
                 st.markdown("**💡 Why This Trade:**")
                 st.caption(f"• {rationale}")
+            
+            # Probability Metrics (Model-Based)
+            prob_metrics = candidate.get('probability_metrics')
+            if prob_metrics:
+                st.markdown("**📊 Model Probabilities:**")
+                
+                # Display key metrics
+                pop = prob_metrics.get('pop_expiry')
+                p_range = prob_metrics.get('p_between_breakevens')
+                ev = prob_metrics.get('expected_pnl_expiry')
+                ev_ratio = prob_metrics.get('ev_per_dollar_risk')
+                
+                pm1, pm2 = st.columns(2)
+                with pm1:
+                    if pop is not None:
+                        st.metric("🎲 Model PoP", f"{pop:.0%}")
+                    if p_range is not None:
+                        st.metric("📐 P(In Range)", f"{p_range:.0%}")
+                with pm2:
+                    if ev is not None:
+                        st.metric("💵 EV (Binary)", f"${ev:.0f}")
+                    if ev_ratio is not None:
+                        st.metric("📈 EV/Risk", f"{ev_ratio:.2f}")
+                
+                # Disclaimer
+                st.caption("⚠️ Model-based probabilities assume lognormal distribution at expiry. Not predictive of actual outcomes.")
         
         # Execute button (full width)
         can_execute = is_valid and contracts > 0
