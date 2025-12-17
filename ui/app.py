@@ -1647,7 +1647,7 @@ def render_edge_history_tab():
                 Strength: {strength_pct:.0f}% | Percentile: {percentile:.0f}% | {edge['direction']}
             </div>
             <div style="margin-top: 4px; color: #64748b; font-size: 0.8rem;">
-                {edge['structure'] or 'No structure'} | Max Loss: ${edge['max_loss']:.0f} | Max Profit: ${edge['max_profit']:.0f}
+                {edge['structure'] or 'No structure'} | Max Loss: ${edge['max_loss'] or 0:.0f} | Max Profit: ${edge['max_profit'] or 0:.0f}
             </div>
         </div>
         """, unsafe_allow_html=True)
