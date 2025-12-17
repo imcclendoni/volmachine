@@ -1779,6 +1779,110 @@ def render_edge_history_tab():
             st.write(edge['rationale'])
 
 
+def render_signals_timeline():
+    """
+    Signals Timeline - shows recent scan sessions (open/close) with edges.
+    Reads from YYYY-MM-DD_{session}.json report files.
+    """
+    import glob
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7)); 
+                border: 1px solid rgba(71,85,105,0.4); border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 2rem;">📡</span>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">SIGNALS TIMELINE</div>
+                <div style="color: #94a3b8; font-size: 0.9rem;">Recent scans (open + close sessions)</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Read all report files
+    reports_dir = Path(__file__).parent.parent / 'logs' / 'reports'
+    report_files = sorted(glob.glob(str(reports_dir / '*.json')), reverse=True)
+    
+    sessions = []
+    for rf in report_files[:20]:  # Last 20 reports
+        if 'latest' in rf:
+            continue
+        try:
+            with open(rf, 'r') as f:
+                report = json.load(f)
+                session_tag = report.get('session', 'legacy')
+                sessions.append({
+                    'file': Path(rf).name,
+                    'date': report.get('report_date', ''),
+                    'session': session_tag,
+                    'generated_at': report.get('generated_at', '')[:16],
+                    'regime': report.get('regime', {}).get('state', ''),
+                    'regime_conf': report.get('regime', {}).get('confidence', 0),
+                    'trading_allowed': report.get('trading_allowed', True),
+                    'edges': report.get('edges', []),
+                    'candidates': report.get('candidates', []),
+                })
+        except:
+            pass
+    
+    if not sessions:
+        st.info("No session reports found. Run the engine with `--session open` or `--session close`.")
+        return
+    
+    # Summary
+    total_sessions = len(sessions)
+    sessions_with_edges = len([s for s in sessions if s['edges']])
+    sessions_with_trades = len([s for s in sessions if any(c.get('recommendation') == 'TRADE' for c in s['candidates'])])
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.metric("Total Sessions", total_sessions)
+    with c2:
+        st.metric("With Edges", sessions_with_edges)
+    with c3:
+        st.metric("With TRADE Signals", sessions_with_trades)
+    
+    st.markdown("---")
+    
+    # Timeline
+    for sess in sessions:
+        session_badge = "🌅 OPEN" if sess['session'] == 'open' else "🌙 CLOSE" if sess['session'] == 'close' else "📋 LEGACY"
+        edge_count = len(sess['edges'])
+        trade_count = len([c for c in sess['candidates'] if c.get('recommendation') == 'TRADE'])
+        
+        edge_color = "#10b981" if trade_count > 0 else "#f59e0b" if edge_count > 0 else "#64748b"
+        
+        st.markdown(f"""
+        <div style="background: rgba(30,41,59,0.5); border-left: 4px solid {edge_color}; 
+                    padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                <div>
+                    <span style="color: #f1f5f9; font-weight: 700; font-size: 1.1rem;">{sess['date']}</span>
+                    <span style="color: #64748b; margin-left: 12px;">{session_badge}</span>
+                </div>
+                <div style="text-align: right;">
+                    <div style="color: #94a3b8; font-size: 0.9rem;">{sess['generated_at']}</div>
+                    <div style="color: #64748b; font-size: 0.8rem;">{sess['regime']} ({sess['regime_conf']:.0%})</div>
+                </div>
+            </div>
+            <div style="margin-top: 8px;">
+                <span style="color: {edge_color}; font-weight: 600;">{edge_count} edges</span>
+                <span style="color: #64748b; margin-left: 16px;">{trade_count} TRADE signals</span>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Show edges for this session
+        if sess['edges']:
+            with st.expander(f"View {len(sess['edges'])} edges"):
+                for edge in sess['edges']:
+                    symbol = edge.get('symbol', '')
+                    edge_type = edge.get('edge_type', '')
+                    strength = edge.get('strength', 0) * 100
+                    direction = edge.get('direction', '')
+                    st.markdown(f"**{symbol}** — {edge_type} ({strength:.0f}%) — {direction}")
+
+
 def main():
     # SIDEBAR NAVIGATION
     with st.sidebar:
@@ -1791,12 +1895,12 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "📊 Blotter", "📜 Edge History"],
+            ["📈 Dashboard", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline"],
             label_visibility="collapsed"
         )
         
         st.markdown("---")
-        st.caption(f"v2.2 • {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"v2.3 • {datetime.now().strftime('%H:%M:%S')}")
     
     # ROUTE TO PAGE
     if page == "📊 Blotter":
@@ -1804,6 +1908,9 @@ def main():
         return
     elif page == "📜 Edge History":
         render_edge_history_tab()
+        return
+    elif page == "📡 Signals Timeline":
+        render_signals_timeline()
         return
     
     # HEADLINE

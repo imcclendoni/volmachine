@@ -8,8 +8,9 @@ Generates regime classification, edge signals, and trade candidates.
 
 import argparse
 import sys
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+import pytz
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -58,6 +59,12 @@ def main():
         action="store_true",
         help="Generate report without saving"
     )
+    parser.add_argument(
+        "--session",
+        choices=["open", "close", "auto"],
+        default="auto",
+        help="Session tag for report: open (pre-market), close (EOD), auto (detect from time)"
+    )
     
     args = parser.parse_args()
     
@@ -66,7 +73,20 @@ def main():
     if args.date:
         run_date = date.fromisoformat(args.date)
     
-    print(f"=== VolMachine Daily Run: {run_date} ===")
+    # Determine session
+    if args.session == "auto":
+        # Auto-detect based on current ET time
+        try:
+            et = pytz.timezone('US/Eastern')
+            now_et = datetime.now(et)
+            # Before 12:00 ET = open session, after = close session
+            session = "open" if now_et.hour < 12 else "close"
+        except:
+            session = "open"  # Default to open if pytz fails
+    else:
+        session = args.session
+    
+    print(f"=== VolMachine Daily Run: {run_date} ({session.upper()} session) ===")
     print()
     
     # Initialize engine
@@ -226,6 +246,7 @@ def main():
             trading_allowed=report.trading_allowed,
             do_not_trade_reasons=report.do_not_trade_reasons,
             output_dir=args.output,
+            session=session,
             provider_status=provider_status,
             universe_scan=universe_scan,
             vrp_metrics=vrp_metrics,

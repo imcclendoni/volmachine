@@ -21,6 +21,7 @@ def export_report_json(
     do_not_trade_reasons: list[str] = None,
     portfolio: dict = None,
     output_dir: str = './logs/reports',
+    session: str = None,  # "open", "close", or None for legacy
     # New diagnostic fields
     provider_status: dict = None,
     universe_scan: dict = None,
@@ -76,15 +77,26 @@ def export_report_json(
         'portfolio': portfolio or _default_portfolio(),
     }
     
-    # Write dated file
-    json_path = output_path / f'{report_date.isoformat()}.json'
+    # Write dated file (with session tag if provided)
+    if session:
+        json_path = output_path / f'{report_date.isoformat()}_{session}.json'
+        report['session'] = session
+    else:
+        json_path = output_path / f'{report_date.isoformat()}.json'
+    
     with open(json_path, 'w') as f:
         json.dump(report, f, indent=2, default=str)
     
-    # Also write latest.json for easy UI access
+    # Update latest.json symlink to point to newest report
     latest_path = output_path / 'latest.json'
-    with open(latest_path, 'w') as f:
-        json.dump(report, f, indent=2, default=str)
+    try:
+        if latest_path.is_symlink() or latest_path.exists():
+            latest_path.unlink()
+        latest_path.symlink_to(json_path.resolve())
+    except:
+        # Fallback: copy content if symlink fails
+        with open(latest_path, 'w') as f:
+            json.dump(report, f, indent=2, default=str)
     
     return json_path
 
