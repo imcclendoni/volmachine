@@ -72,6 +72,11 @@ def main():
         default=True,
         help="Show integrity report (default: True)"
     )
+    parser.add_argument(
+        "--input-dir",
+        default=None,
+        help="Path to reports directory (default: ./logs/reports)"
+    )
     
     args = parser.parse_args()
     
@@ -89,12 +94,15 @@ def main():
     print(f"=" * 60)
     print(f"Period: {start_date} to {end_date} ({(end_date - start_date).days} days)")
     print(f"Config: {args.config}")
+    if args.input_dir:
+        print(f"Input: {args.input_dir}")
     if args.symbols:
         print(f"Symbols: {', '.join(args.symbols)}")
     print()
     
     # Run backtest
-    backtester = DeterministicBacktester(config_path=args.config)
+    reports_dir = args.input_dir if args.input_dir else './logs/reports'
+    backtester = DeterministicBacktester(config_path=args.config, reports_dir=reports_dir)
     result = backtester.run_range(start_date, end_date, symbols=args.symbols)
     
     # Print summary

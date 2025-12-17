@@ -28,7 +28,7 @@ strategies:
     # Mean-reversion gating
     require_skew_reverting: true
     skew_delta_window: 5        # 5-day lookback
-    min_delta: 0.01             # 1 vol point minimum move
+    min_delta: 0.005            # 0.5 vol point minimum move (was 0.01)
     min_percentile_change: 10   # OR 10 percentile points
     
     # Regime filter
@@ -38,18 +38,15 @@ strategies:
     loss_cooldown_days: 5
 
 # ============================================================
-# WIDTH SELECTION (cascade)
+# WIDTH SELECTION
 # ============================================================
 
 width_selection:
-  # Try widths in order, select first that passes:
-  # - contracts exist at strike increment
-  # - liquidity filters pass
-  # - risk cap met
-  cascade: [1, 2, 3, 5]
+  # Must be multiples of 5 for SPY/QQQ/IWM strike increments
+  cascade: [5, 10]
   
   # Risk cap per trade (max loss in dollars)
-  max_risk_per_trade: 100
+  max_risk_per_trade: 500  # $5 width = ~$500 max
   
   # Liquidity requirements
   min_volume: 10
@@ -62,30 +59,14 @@ width_selection:
 
 exit_rules:
   credit_spread:
-    # Exit priority (first condition wins)
-    exit_priority: ["take_profit", "stop_loss", "skew_norm", "time_stop", "expiry"]
-    
-    # 1. Take profit: 50-70% of credit captured
-    take_profit_pct: 50
-    
-    # 2. Stop loss: 1.5-2x credit
-    stop_loss_mult: 1.5
-    
-    # 3. Skew normalization: exit when percentile returns to normal
-    skew_norm_low: 40
-    skew_norm_high: 60
-    
-    # 4. Time stop: only if none of above (secondary)
-    time_stop_dte: 7
-    
-    # 5. Expiry: last resort
+    # Exit priority: TP > SL > time_stop
+    take_profit_pct: 50       # 50% of credit captured
+    stop_loss_mult: 1.5       # 1.5x credit
+    time_stop_dte: 7          # Secondary, after TP/SL checked
     
   debit_spread:
-    exit_priority: ["take_profit", "stop_loss", "skew_norm", "time_stop", "expiry"]
     take_profit_pct: 50
     stop_loss_pct: 50
-    skew_norm_low: 40
-    skew_norm_high: 60
     time_stop_dte: 10
 
 # ============================================================
@@ -93,11 +74,8 @@ exit_rules:
 # ============================================================
 
 execution:
-  # Avoid lookahead bias: signal on day N, execute day N+1
-  next_day_execution: true
-  
-  # Fill model
-  fill_model: "close_plus_slippage"  # or "bid_ask"
+  next_day_execution: true    # Signal day N, execute day N+1
+  fill_model: "close_plus_slippage"
 
 # ============================================================
 # DEFAULTS
@@ -107,13 +85,11 @@ defaults:
   lookback_days: 90
   min_edge_strength: 0.50
   trade_only: true
-  symbols: ["SPY", "QQQ", "IWM", "TLT"]
+  symbols: ["SPY", "QQQ", "IWM"]
 
 # ============================================================
-# VALIDATION
+# V4 OUTPUT DIRECTORY
 # ============================================================
 
-validation:
-  require_history_mode: true
-  min_history_days: 20
-  fail_on_fallback: true
+output:
+  reports_dir: "./logs/backfill/v4/reports"

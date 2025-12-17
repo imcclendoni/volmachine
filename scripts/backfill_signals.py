@@ -265,13 +265,13 @@ def calculate_skew_metrics(
     underlying_price: float,
     api_key: str,
     delay: float = 0.2,
-) -> Optional[Dict]:
-    """Calculate skew metrics matching live engine output."""
+) -> tuple:
+    """Calculate skew metrics matching live engine output. Returns (metrics, status)."""
     expiry = find_monthly_expiry(as_of_date, TARGET_DTE, DTE_TOLERANCE)
     dte = (expiry - as_of_date).days
     
     if dte < 7:
-        return None
+        return None, "dte_too_low"
     
     T = dte / 365
     r = 0.05
@@ -286,13 +286,17 @@ def calculate_skew_metrics(
     time.sleep(delay)
     
     if not atm_call_data or not atm_put_data:
-        return None
+        return None, "no_atm_bars"
     
     atm_call_iv = implied_volatility(atm_call_data['close'], underlying_price, atm_strike, T, r, 'call')
     atm_put_iv = implied_volatility(atm_put_data['close'], underlying_price, atm_strike, T, r, 'put')
     
     if not atm_call_iv or not atm_put_iv:
-        return None
+        return None, "atm_iv_fail"
+    
+    # IV sanity bounds (reject garbage)
+    if not (0.01 < atm_call_iv < 3.0) or not (0.01 < atm_put_iv < 3.0):
+        return None, "atm_iv_out_of_bounds"
     
     atm_iv = (atm_call_iv + atm_put_iv) / 2
     
@@ -307,15 +311,23 @@ def calculate_skew_metrics(
     time.sleep(delay)
     
     if not put_25d_data or not call_25d_data:
-        return None
+        return None, "no_25d_bars"
     
     put_iv_25d = implied_volatility(put_25d_data['close'], underlying_price, put_25d_strike, T, r, 'put')
     call_iv_25d = implied_volatility(call_25d_data['close'], underlying_price, call_25d_strike, T, r, 'call')
     
     if not put_iv_25d or not call_iv_25d:
-        return None
+        return None, "25d_iv_fail"
+    
+    # IV sanity bounds
+    if not (0.01 < put_iv_25d < 3.0) or not (0.01 < call_iv_25d < 3.0):
+        return None, "25d_iv_out_of_bounds"
     
     put_call_skew = put_iv_25d - call_iv_25d
+    
+    # Sanity check: skew should be non-zero if IVs are different
+    if abs(put_call_skew) < 1e-6 and abs(put_iv_25d - call_iv_25d) > 0.001:
+        return None, "skew_calculation_error"
     
     return {
         'put_iv_25d': put_iv_25d,
@@ -328,7 +340,7 @@ def calculate_skew_metrics(
         'expiry': expiry,
         'dte': dte,
         'underlying_price': underlying_price,
-    }
+    }, "ok"
 
 
 # ============================================================
@@ -339,105 +351,96 @@ def detect_skew_edge(
     metrics: Dict,
     skew_history: List[float],
     percentile_history: List[float],
-) -> Optional[Dict]:
+) -> tuple:
     """
     Detect skew edge with proper mean-reversion gating.
     
-    Requirements:
-    - Level: percentile >= 90 (steep) or <= 10 (flat)
-    - Reversion: skew_delta < -min_delta (steep) or > +min_delta (flat)
-    - OR: percentile_change >= min_percentile_change
+    MATCHES debug_gating.py logic:
+    - STEEP (pctl >= 90): require skew_delta < 0 AND abs(skew_delta) >= min_delta
+    - FLAT (pctl <= 10): require skew_delta > 0 AND abs(skew_delta) >= min_delta
+    - OR: abs(pctl_change) >= min_pctl_change
+    
+    Returns:
+        (edge_dict, rejection_reason) - edge_dict is None if rejected
     """
     current_skew = metrics['put_call_skew']
     
     if len(skew_history) < MIN_HISTORY_FOR_PERCENTILE:
-        return None
+        return None, "insufficient_history"
     
     # Calculate current percentile
     below = sum(1 for s in skew_history if s < current_skew)
     percentile = (below / len(skew_history)) * 100
     
+    # Check if extreme
+    is_steep = percentile >= PERCENTILE_EXTREME_HIGH
+    is_flat = percentile <= PERCENTILE_EXTREME_LOW
+    
+    if not is_steep and not is_flat:
+        return None, "not_extreme"
+    
     # Calculate skew delta (5-day change)
     skew_delta = 0.0
-    percentile_delta = 0.0
+    pctl_delta = 0.0
     
     if len(skew_history) >= SKEW_DELTA_WINDOW:
-        past_skew = skew_history[-SKEW_DELTA_WINDOW]
-        skew_delta = current_skew - past_skew
+        past_idx = -SKEW_DELTA_WINDOW
+        skew_delta = current_skew - skew_history[past_idx]
     
     if len(percentile_history) >= SKEW_DELTA_WINDOW:
-        past_percentile = percentile_history[-SKEW_DELTA_WINDOW]
-        percentile_delta = percentile - past_percentile
+        past_idx = -SKEW_DELTA_WINDOW
+        pctl_delta = percentile - percentile_history[past_idx]
     
-    # Steep skew detection (sell credit spreads)
-    if percentile >= PERCENTILE_EXTREME_HIGH:
-        # Check mean-reversion: skew must be falling
-        meets_delta = skew_delta < -MIN_DELTA
-        meets_percentile_change = percentile_delta < -MIN_PERCENTILE_CHANGE
+    # Gating check - MAGNITUDE ONLY (no sign requirement for now)
+    # Goal: get non-zero signals first, then add sign gating if it improves PF
+    if REQUIRE_SKEW_REVERTING:
+        meets_delta_threshold = abs(skew_delta) >= MIN_DELTA
+        meets_pctl_threshold = abs(pctl_delta) >= MIN_PERCENTILE_CHANGE
         
-        if REQUIRE_SKEW_REVERTING and not (meets_delta or meets_percentile_change):
-            return None  # Not reverting
+        if not (meets_delta_threshold or meets_pctl_threshold):
+            return None, "delta_too_small"
         
+        # Log the direction for analysis (but don't filter on it)
+        if is_steep:
+            is_reverting = skew_delta < 0  # Steep should be falling
+        else:
+            is_reverting = skew_delta > 0  # Flat should be rising
+    
+    # Calculate strength
+    if is_steep:
         strength = 0.6 + (percentile - PERCENTILE_EXTREME_HIGH) / 20 * 0.4
-        strength = max(0.0, min(1.0, strength))
-        
-        return {
-            'type': 'skew_extreme',
-            'direction': 'SHORT',
-            'structure_type': 'credit_spread',
-            'strength': strength,
-            'is_steep': True,
-            'is_flat': False,
-            'metrics': {
-                'put_iv_25d': round(metrics['put_iv_25d'], 4),
-                'call_iv_25d': round(metrics['call_iv_25d'], 4),
-                'atm_iv': round(metrics['atm_iv'], 4),
-                'put_call_skew': round(current_skew, 4),
-                'skew_percentile': round(percentile, 1),
-                'skew_delta': round(skew_delta, 4),
-                'percentile_delta': round(percentile_delta, 1),
-                'is_steep': 1.0,
-                'is_flat': 0.0,
-                'history_mode': 1.0,
-            },
-            'rationale': f"Steep skew reverting: {percentile:.0f}th pctl, Δskew={skew_delta:.2%}, Δpctl={percentile_delta:.0f}",
-        }
-    
-    # Flat skew detection (buy debit spreads)
-    if percentile <= PERCENTILE_EXTREME_LOW:
-        # Check mean-reversion: skew must be rising
-        meets_delta = skew_delta > MIN_DELTA
-        meets_percentile_change = percentile_delta > MIN_PERCENTILE_CHANGE
-        
-        if REQUIRE_SKEW_REVERTING and not (meets_delta or meets_percentile_change):
-            return None
-        
+        direction = 'SHORT'
+        structure_type = 'credit_spread'
+    else:
         strength = 0.5 + (PERCENTILE_EXTREME_LOW - percentile) / 20 * 0.3
-        strength = max(0.0, min(1.0, strength))
-        
-        return {
-            'type': 'skew_extreme',
-            'direction': 'LONG',
-            'structure_type': 'debit_spread',
-            'strength': strength,
-            'is_steep': False,
-            'is_flat': True,
-            'metrics': {
-                'put_iv_25d': round(metrics['put_iv_25d'], 4),
-                'call_iv_25d': round(metrics['call_iv_25d'], 4),
-                'atm_iv': round(metrics['atm_iv'], 4),
-                'put_call_skew': round(current_skew, 4),
-                'skew_percentile': round(percentile, 1),
-                'skew_delta': round(skew_delta, 4),
-                'percentile_delta': round(percentile_delta, 1),
-                'is_steep': 0.0,
-                'is_flat': 1.0,
-                'history_mode': 1.0,
-            },
-            'rationale': f"Flat skew reverting: {percentile:.0f}th pctl, Δskew={skew_delta:.2%}, Δpctl={percentile_delta:.0f}",
-        }
+        direction = 'LONG'
+        structure_type = 'debit_spread'
     
-    return None
+    strength = max(0.0, min(1.0, strength))
+    
+    edge = {
+        'type': 'skew_extreme',
+        'direction': direction,
+        'structure_type': structure_type,
+        'strength': strength,
+        'is_steep': is_steep,
+        'is_flat': is_flat,
+        'metrics': {
+            'put_iv_25d': round(metrics['put_iv_25d'], 4),
+            'call_iv_25d': round(metrics['call_iv_25d'], 4),
+            'atm_iv': round(metrics['atm_iv'], 4),
+            'put_call_skew': round(current_skew, 4),
+            'skew_percentile': round(percentile, 1),
+            'skew_delta': round(skew_delta, 4),
+            'percentile_delta': round(pctl_delta, 1),
+            'is_steep': 1.0 if is_steep else 0.0,
+            'is_flat': 1.0 if is_flat else 0.0,
+            'history_mode': 1.0,
+        },
+        'rationale': f"{'Steep' if is_steep else 'Flat'} skew reverting: {percentile:.0f}th pctl, Δskew={skew_delta:.4f}, Δpctl={pctl_delta:.0f}",
+    }
+    
+    return edge, "passed"
 
 
 # ============================================================
@@ -678,7 +681,7 @@ def main():
     )
     parser.add_argument("--days", type=int, default=90)
     parser.add_argument("--symbols", nargs="+", default=["SPY", "QQQ", "IWM"])  # TLT excluded by default
-    parser.add_argument("--output", default="./logs/reports")
+    parser.add_argument("--output", default="./logs/backfill/v4/reports")  # v4 dedicated directory
     parser.add_argument("--delay", type=float, default=0.15)
     parser.add_argument("--build-history", action="store_true", help="Build skew history only")
     
@@ -699,13 +702,27 @@ def main():
     print(f"Period: {start_date} to {end_date}")
     print(f"Symbols: {', '.join(args.symbols)}")
     print(f"Width cascade: {WIDTH_CASCADE}")
-    print(f"Min delta: {MIN_DELTA:.2%}, Min pctl change: {MIN_PERCENTILE_CHANGE}")
+    print(f"Min delta: {MIN_DELTA:.4f} ({MIN_DELTA*100:.2f} vol points)")
+    print(f"Min pctl change: {MIN_PERCENTILE_CHANGE}")
     print(f"Max risk per trade: ${MAX_RISK_PER_TRADE}")
+    print(f"Output: {output_dir}")
     print(f"Mode: {'Build History' if args.build_history else 'Detect Signals'}")
     print()
     
+    # Debug counters
     signals_found = 0
     dates_processed = 0
+    candidates_extreme = 0      # pctl <= 10 or >= 90
+    rejected_by_reversion = 0   # delta sign wrong
+    rejected_by_delta_threshold = 0  # delta too small
+    rejected_by_width = 0       # width cascade failed
+    passed_gating = 0
+    
+    # Data integrity counters
+    iv_failures = {'no_atm_bars': 0, 'atm_iv_fail': 0, 'atm_iv_out_of_bounds': 0,
+                   'no_25d_bars': 0, '25d_iv_fail': 0, '25d_iv_out_of_bounds': 0,
+                   'dte_too_low': 0, 'skew_calculation_error': 0, 'no_underlying': 0}
+    valid_days_by_symbol = {sym: 0 for sym in args.symbols}
     
     # Load existing history
     histories = {}
@@ -727,17 +744,20 @@ def main():
         for symbol in args.symbols:
             underlying = get_underlying_price(symbol, current, api_key)
             if not underlying:
+                iv_failures['no_underlying'] += 1
                 continue
             
-            metrics = calculate_skew_metrics(symbol, current, underlying, api_key, args.delay)
+            metrics, status = calculate_skew_metrics(symbol, current, underlying, api_key, args.delay)
             
-            if not metrics:
+            if status != "ok":
+                iv_failures[status] = iv_failures.get(status, 0) + 1
                 continue
             
-            # Record skew for history
+            # Data is valid - record to history
+            valid_days_by_symbol[symbol] += 1
             histories[symbol]['skew'].append(metrics['put_call_skew'])
             
-            # Calculate current percentile for history
+            # Calculate current percentile on-the-fly (don't persist separately)
             skew_hist = histories[symbol]['skew'][:-1]
             if len(skew_hist) >= MIN_HISTORY_FOR_PERCENTILE:
                 below = sum(1 for s in skew_hist if s < metrics['put_call_skew'])
@@ -745,11 +765,23 @@ def main():
                 histories[symbol]['percentile'].append(current_pctl)
             
             if not args.build_history:
-                edge = detect_skew_edge(
+                edge, rejection = detect_skew_edge(
                     metrics,
                     histories[symbol]['skew'][:-1],
                     histories[symbol]['percentile'],
                 )
+                
+                # Track rejection reasons
+                if rejection == "not_extreme":
+                    pass  # Normal, most days aren't extreme
+                elif rejection == "wrong_sign":
+                    rejected_by_reversion += 1
+                    candidates_extreme += 1
+                elif rejection == "delta_too_small":
+                    rejected_by_delta_threshold += 1
+                    candidates_extreme += 1
+                elif rejection == "passed":
+                    candidates_extreme += 1
                 
                 if edge and edge['strength'] >= 0.5:
                     # Build structure with width cascade
@@ -762,6 +794,7 @@ def main():
                         exec_date = get_next_trading_day(current)
                         save_backfill_report(current, exec_date, symbol, edge, structure, output_dir)
                         signals_found += 1
+                        passed_gating += 1
                         
                         width = structure.get('width_selected', '?')
                         max_loss = structure.get('max_loss_dollars', 0)
@@ -770,6 +803,8 @@ def main():
                             day_signals.append(f"{symbol}: STEEP→credit w={width} ${max_loss:.0f}")
                         else:
                             day_signals.append(f"{symbol}: FLAT→debit w={width} ${max_loss:.0f}")
+                    else:
+                        rejected_by_width += 1
         
         if day_signals:
             print(f"✅ {', '.join(day_signals)}")
@@ -785,15 +820,51 @@ def main():
     print()
     print(f"=== Backfill Complete ===")
     print(f"Dates processed: {dates_processed}")
+    print(f"Config: min_delta={MIN_DELTA}, window={SKEW_DELTA_WINDOW}, widths={WIDTH_CASCADE}")
+    
+    # Data integrity report
+    print(f"\nDATA INTEGRITY REPORT:")
+    total_valid = sum(valid_days_by_symbol.values())
+    total_failures = sum(iv_failures.values())
+    print(f"  Valid days recorded: {total_valid}")
+    print(f"  IV failures: {total_failures}")
+    if total_failures > 0:
+        for reason, count in sorted(iv_failures.items(), key=lambda x: -x[1]):
+            if count > 0:
+                print(f"    {reason}: {count}")
+    print(f"  By symbol:")
+    for sym in args.symbols:
+        valid = valid_days_by_symbol[sym]
+        pct = 100 * valid / dates_processed if dates_processed else 0
+        skew_range = ""
+        if histories[sym]['skew']:
+            skew_range = f" skew=[{min(histories[sym]['skew']):.3f}, {max(histories[sym]['skew']):.3f}]"
+        print(f"    {sym}: {valid}/{dates_processed} ({pct:.0f}% valid){skew_range}")
     
     if not args.build_history:
-        print(f"Signals found: {signals_found}")
+        print(f"\nSIGNAL GATING:")
+        print(f"  Extreme days (pctl<=10 or >=90): {candidates_extreme}")
+        print(f"  Rejected - wrong sign: {rejected_by_reversion}")
+        print(f"  Rejected - delta too small: {rejected_by_delta_threshold}")
+        print(f"  Passed gating: {passed_gating}")
+        print(f"  Rejected by width cascade: {rejected_by_width}")
+        print(f"  Signals saved: {signals_found}")
+        
         if signals_found > 0:
-            print(f"\nNext: python3 scripts/run_backtest.py --days {args.days}")
+            print(f"\nOutput: {output_dir}")
+            print(f"Next: python3 scripts/run_backtest.py --input-dir {output_dir} --days {args.days}")
         else:
-            print("No signals passed mean-reversion gating. Consider adjusting min_delta.")
+            print("\nNo signals generated. Diagnosis:")
+            if total_valid < dates_processed * 0.5:
+                print("  → Low data quality - too many IV failures.")
+            elif candidates_extreme == 0:
+                print("  → No extreme percentile days found. Check history length.")
+            elif passed_gating == 0:
+                print("  → All extreme days rejected by gating. Try lowering min_delta.")
+            elif rejected_by_width > 0:
+                print("  → Width cascade failing - check strike increments.")
     else:
-        print("History built. Run again without --build-history to detect signals.")
+        print("\nHistory built. Run again without --build-history to detect signals.")
     
     return 0
 
