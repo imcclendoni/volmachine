@@ -49,6 +49,14 @@ from execution.ibkr_order_client import (
     reset_ibkr_client,
 )
 
+from execution.blotter import (
+    PaperTrade,
+    TradeLeg,
+    Blotter,
+    get_blotter,
+    create_trade_from_candidate,
+)
+
 
 __all__ = [
     # Config
@@ -76,4 +84,12 @@ __all__ = [
     'IBKRValidationResult',
     'validate_for_ibkr',
     'validate_account_is_paper',
+    
+    # Blotter
+    'PaperTrade',
+    'TradeLeg',
+    'Blotter',
+    'get_blotter',
+    'create_trade_from_candidate',
 ]
+
