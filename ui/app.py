@@ -636,10 +636,13 @@ def render_trade_card(candidate: dict):
             # Edge Rationale
             edge = candidate.get('edge') or {}
             rationale = edge.get('rationale', {})
-            if rationale:
+            if rationale and isinstance(rationale, dict):
                 st.markdown("**💡 Why This Trade:**")
                 for key, val in rationale.items():
                     st.caption(f"• {key}: {val}")
+            elif rationale and isinstance(rationale, str):
+                st.markdown("**💡 Why This Trade:**")
+                st.caption(f"• {rationale}")
         
         # Execute button (full width)
         can_execute = is_valid and contracts > 0
