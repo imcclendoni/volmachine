@@ -146,12 +146,41 @@ class DeterministicBacktester:
         # Check if using strict fills
         use_strict = self.config.get('slippage', {}).get('use_strict_fills', True)
         
+        # Position limits config
+        strategy_config = self.config.get('strategies', {}).get('skew_extreme', {})
+        max_positions_per_symbol = strategy_config.get('max_positions_per_symbol', 1)
+        cooldown_after_sl_days = strategy_config.get('cooldown_after_sl_days', 10)
+        
         # Simulate each signal
         trades = []
         unexecutable_count = 0
         skipped_no_data = 0
+        skipped_overlap = 0
+        skipped_cooldown = 0
+        
+        # Track open positions: symbol -> exit_date
+        open_positions = {}
+        # Track cooldown: symbol -> earliest_entry_date
+        cooldown_until = {}
         
         for signal in signals:
+            symbol = signal.get('symbol')
+            exec_date_str = signal.get('execution_date', signal.get('signal_date'))
+            try:
+                exec_date = date.fromisoformat(exec_date_str)
+            except:
+                exec_date = date.today()
+            
+            # Check position overlap
+            if symbol in open_positions and exec_date < open_positions[symbol]:
+                skipped_overlap += 1
+                continue
+            
+            # Check cooldown after SL
+            if symbol in cooldown_until and exec_date < cooldown_until[symbol]:
+                skipped_cooldown += 1
+                continue
+            
             trade = self._simulate_trade(signal, use_strict=use_strict)
             if trade is None:
                 skipped_no_data += 1
@@ -161,12 +190,24 @@ class DeterministicBacktester:
                 trades.append(trade)
                 print(f"  {trade.signal_date} {trade.symbol}: {trade.structure_type} -> "
                       f"${trade.net_pnl:.2f} ({trade.exit_reason.value})")
+                
+                # Update position tracking
+                open_positions[symbol] = trade.exit_date if isinstance(trade.exit_date, date) else date.fromisoformat(trade.exit_date)
+                
+                # Set cooldown if stop-loss
+                if trade.exit_reason == ExitReason.STOP_LOSS:
+                    exit_dt = trade.exit_date if isinstance(trade.exit_date, date) else date.fromisoformat(trade.exit_date)
+                    cooldown_until[symbol] = exit_dt + timedelta(days=cooldown_after_sl_days)
         
         print(f"\nCompleted {len(trades)} trades")
         if unexecutable_count > 0:
             print(f"Unexecutable (bad bid/ask): {unexecutable_count}")
         if skipped_no_data > 0:
             print(f"Skipped (no data): {skipped_no_data}")
+        if skipped_overlap > 0:
+            print(f"Skipped (position overlap): {skipped_overlap}")
+        if skipped_cooldown > 0:
+            print(f"Skipped (SL cooldown): {skipped_cooldown}")
         
         # Calculate metrics
         metrics = self._calculate_metrics(trades)

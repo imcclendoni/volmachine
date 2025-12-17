@@ -726,7 +726,8 @@ def main():
     candidates_extreme = 0      # pctl <= 10 or >= 90
     rejected_by_reversion = 0   # delta sign wrong
     rejected_by_delta_threshold = 0  # delta too small
-    rejected_by_width = 0       # width cascade failed
+    rejected_by_width = 0        # width cascade failed
+    rejected_by_credit_quality = 0  # credit too small vs width
     passed_gating = 0
     
     # Data integrity counters
@@ -819,6 +820,16 @@ def main():
                     )
                     
                     if structure:
+                        # Credit quality gate: reject steamroller trades
+                        entry_credit = structure.get('entry_credit', 0)
+                        width = structure.get('width_selected', 5)
+                        credit_to_width = entry_credit / width if width > 0 else 0
+                        
+                        MIN_CREDIT_TO_WIDTH = 0.20  # Credit must be >= 20% of width
+                        if credit_to_width < MIN_CREDIT_TO_WIDTH:
+                            rejected_by_credit_quality += 1
+                            continue
+                        
                         # Next-day execution
                         exec_date = get_next_trading_day(current)
                         save_backfill_report(current, exec_date, symbol, edge, structure, output_dir)

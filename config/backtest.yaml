@@ -25,6 +25,9 @@ strategies:
     disabled_symbols: ["TLT"]
     min_strength: 0.50
     
+    # Credit quality gate (reject steamroller trades)
+    min_credit_to_width: 0.20   # Credit must be >= 20% of width
+    
     # Mean-reversion gating
     require_skew_reverting: true
     skew_delta_window: 5        # 5-day lookback
@@ -34,7 +37,11 @@ strategies:
     # Regime filter
     blocked_regimes: ["HIGH_VOL_PANIC", "TREND_DOWN"]
     
-    # Cooldown after loss
+    # Position limits
+    max_positions_per_symbol: 1
+    cooldown_after_sl_days: 10  # Pause after stop-loss
+    
+    # Cooldown after loss (legacy)
     loss_cooldown_days: 5
 
 # ============================================================
@@ -61,7 +68,7 @@ exit_rules:
   credit_spread:
     # Exit priority: TP > SL > time_stop
     take_profit_pct: 50       # 50% of credit captured
-    stop_loss_mult: 1.5       # 1.5x credit
+    stop_loss_mult: 1.25      # 1.25x credit (tightened from 1.5)
     time_stop_dte: 7          # Secondary, after TP/SL checked
     
   debit_spread:
