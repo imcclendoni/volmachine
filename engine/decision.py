@@ -149,9 +149,9 @@ def create_trade_candidate(
             pass
     
     # Calculate probability metrics
-    # ONLY compute if: 1) recommendation is TRADE, 2) structure has legs, 3) spot_price provided
+    # ONLY compute if: 1) recommendation is TRADE or REVIEW, 2) structure has legs, 3) spot_price provided
     probability_metrics = None
-    if recommendation == "TRADE" and structure.legs and not getattr(structure, 'is_placeholder', False):
+    if recommendation in ("TRADE", "REVIEW") and structure.legs and not getattr(structure, 'is_placeholder', False):
         try:
             from engine.probability import calculate_probability_metrics
             from structures.pricing import get_risk_free_rate, get_dividend_yield, time_to_expiry_years
