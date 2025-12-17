@@ -774,12 +774,29 @@ def render_trade_card(candidate: dict):
                     ['python3', 'scripts/submit_test_order.py', '--paper', '--dry-run', '--symbol', symbol],
                     capture_output=True, text=True, timeout=60, cwd=str(Path(__file__).parent.parent)
                 )
-                if result.returncode == 0:
+                output = result.stdout + result.stderr
+                
+                # Check if running on cloud without ib_insync
+                if 'ib_insync' in output or 'ModuleNotFoundError' in output:
+                    st.error("⚠️ **IBKR execution only works locally**")
+                    st.info("""
+                    **To execute trades:**
+                    1. Run Streamlit locally: `streamlit run ui/app.py`
+                    2. Start IBKR Gateway on port 4002
+                    3. Click EXECUTE again
+                    
+                    **Or use terminal:**
+                    ```
+                    python3 scripts/submit_test_order.py --paper --submit --symbol """ + symbol + """
+                    ```
+                    """)
+                    st.session_state['card_states'][card_key] = 'ready'
+                elif result.returncode == 0:
                     st.session_state['card_states'][card_key] = 'confirmed'
                     st.session_state[f'preview_{card_key}'] = result.stdout
                     st.rerun()
                 else:
-                    st.error(f"Preview failed: {result.stderr or result.stdout}")
+                    st.error(f"Preview failed: {output}")
                     st.session_state['card_states'][card_key] = 'ready'
             except Exception as e:
                 st.error(f"IBKR connection error: {e}")
