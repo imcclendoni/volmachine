@@ -399,6 +399,7 @@ def main():
     parser.add_argument('--paper', action='store_true', required=True, help='Confirm paper trading')
     parser.add_argument('--dry-run', action='store_true', required=True, 
                         help='Preview only (required until reliable quotes)')
+    parser.add_argument('--verbose', '-v', action='store_true', help='Show full stack traces')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=4002)
     parser.add_argument('--client-id', type=int, default=99)
@@ -443,10 +444,33 @@ def main():
         
         return 0
         
+    except ValueError as e:
+        # Friendly error for validation/pricing issues
+        error_msg = str(e)
+        print(f"\n❌ Rejected: {error_msg}")
+        
+        # Add helpful hints
+        if "limit" in error_msg.lower() and "positive" in error_msg.lower():
+            print("   💡 Hint: Slippage too high for credit spread. Try --slippage 0.05")
+        elif "net premium" in error_msg.lower():
+            print("   💡 Hint: Spread has zero/negative premium. Choose different strikes.")
+        elif "polygon" in error_msg.lower() or "pricing" in error_msg.lower():
+            print("   💡 Hint: No trading data for these options. Try nearer-term expiration.")
+        
+        return 1
+        
+    except ConnectionError as e:
+        print(f"\n❌ Connection failed: {e}")
+        print("   💡 Hint: Ensure IBKR TWS/Gateway is running on port 4002")
+        return 1
+        
     except Exception as e:
-        print(f"\n❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+        # Unexpected errors - show brief message, suggest --verbose
+        print(f"\n❌ Unexpected error: {e}")
+        print("   Run with --verbose for full traceback")
+        if args.verbose if hasattr(args, 'verbose') else False:
+            import traceback
+            traceback.print_exc()
         return 1
         
     finally:
