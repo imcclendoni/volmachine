@@ -63,8 +63,12 @@ def create_trade_candidate(
     # Calculate dollar values for display
     max_loss_dollars = points_to_dollars(structure.max_loss) if structure.max_loss else 0
     
-    # Check if this is a fallback edge
-    is_fallback_edge = getattr(edge, 'is_fallback', False)
+    # Check if this is a fallback edge (stored in metrics dict by edge detectors)
+    edge_metrics = edge.metrics or {}
+    is_fallback_edge = (
+        edge_metrics.get('is_fallback', False) or  # Explicit fallback flag
+        edge_metrics.get('history_mode', 1) == 0   # history_mode=0 means no percentile history
+    )
     
     # Get execution config (passed via risk_budget)
     exec_config = (risk_budget or {}).get('execution_config', {})
