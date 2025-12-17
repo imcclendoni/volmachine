@@ -1533,19 +1533,23 @@ def render_blotter_tab():
     
     if open_trades:
         for trade in open_trades:
-            entry_display = f"+${trade.entry_price:.2f}" if trade.entry_price > 0 else f"-${abs(trade.entry_price):.2f}"
-            spread_type = "CREDIT" if trade.entry_price > 0 else "DEBIT"
+            entry_price = trade.entry_price or 0
+            max_loss = trade.max_loss_dollars or 0
+            entry_display = f"+${entry_price:.2f}" if entry_price > 0 else f"-${abs(entry_price):.2f}"
+            spread_type = "CREDIT" if entry_price > 0 else "DEBIT"
+            structure_name = trade.structure or "spread"
+            dte = trade.dte or 0
             
             st.markdown(f"""
             <div style="background: rgba(30,41,59,0.5); border: 1px solid #475569; border-radius: 8px; 
                         padding: 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <div>
                     <span style="color: #3b82f6; font-weight: 700; font-size: 1.1rem;">{trade.symbol}</span>
-                    <span style="color: #64748b; margin-left: 12px;">{trade.structure} • {trade.dte} DTE</span>
+                    <span style="color: #64748b; margin-left: 12px;">{structure_name} • {dte} DTE</span>
                 </div>
                 <div style="text-align: right;">
                     <div style="color: #10b981; font-weight: 600;">{spread_type} {entry_display}</div>
-                    <div style="color: #64748b; font-size: 11px;">Max Loss: ${trade.max_loss_dollars:.0f}</div>
+                    <div style="color: #64748b; font-size: 11px;">Max Loss: ${max_loss:.0f}</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -1568,13 +1572,13 @@ def render_blotter_tab():
     """, unsafe_allow_html=True)
     
     if closed_trades:
-        for trade in sorted(closed_trades, key=lambda t: t.exit_timestamp or t.timestamp, reverse=True)[:20]:
-            pnl = trade.realized_pnl
+        for trade in sorted(closed_trades, key=lambda t: t.exit_timestamp or t.timestamp or '', reverse=True)[:20]:
+            pnl = trade.realized_pnl or 0
             pnl_color = "#10b981" if pnl >= 0 else "#ef4444"
             pnl_sign = "+" if pnl >= 0 else ""
             result_icon = "✅" if pnl >= 0 else "❌"
             
-            date_str = trade.timestamp[:10] if trade.timestamp else "N/A"
+            date_str = (trade.timestamp or '')[:10] if trade.timestamp else "N/A"
             
             st.markdown(f"""
             <div style="background: rgba(30,41,59,0.4); border-left: 3px solid {pnl_color}; 
@@ -1583,11 +1587,11 @@ def render_blotter_tab():
                     <span style="font-size: 1.2rem;">{result_icon}</span>
                     <div>
                         <span style="color: #f1f5f9; font-weight: 600;">{trade.symbol}</span>
-                        <span style="color: #64748b; margin-left: 8px;">{trade.structure}</span>
+                        <span style="color: #64748b; margin-left: 8px;">{trade.structure or 'spread'}</span>
                     </div>
                 </div>
                 <div style="display: flex; gap: 24px; align-items: center;">
-                    <div style="color: #94a3b8; font-size: 12px;">{trade.edge_type}</div>
+                    <div style="color: #94a3b8; font-size: 12px;">{trade.edge_type or 'edge'}</div>
                     <div style="color: #64748b; font-size: 12px;">{date_str}</div>
                     <div style="color: {pnl_color}; font-weight: 700; min-width: 80px; text-align: right;">{pnl_sign}${pnl:.0f}</div>
                 </div>
@@ -1682,19 +1686,20 @@ def render_edge_history_tab():
                         entry = json.loads(line)
                         if entry.get('event') == 'trade_candidate':
                             data = entry.get('data', {})
+                            ts = data.get('timestamp', entry.get('timestamp', ''))
                             edges.append({
-                                'timestamp': data.get('timestamp', entry.get('timestamp', ''))[:16],
-                                'symbol': data.get('symbol', ''),
-                                'edge_type': data.get('edge', {}).get('type', ''),
-                                'strength': data.get('edge', {}).get('strength', 0),
-                                'percentile': data.get('edge', {}).get('metrics', {}).get('skew_percentile', 0),
-                                'direction': data.get('edge', {}).get('direction', ''),
-                                'recommendation': data.get('recommendation', ''),
-                                'structure': data.get('structure', {}).get('type', ''),
-                                'max_loss': data.get('structure', {}).get('max_loss_dollars', 0),
-                                'max_profit': data.get('structure', {}).get('max_profit_dollars', 0),
-                                'regime': data.get('regime', {}).get('state', ''),
-                                'rationale': data.get('edge', {}).get('rationale', ''),
+                                'timestamp': ts[:16] if ts else '',
+                                'symbol': data.get('symbol', '') or '',
+                                'edge_type': data.get('edge', {}).get('type', '') or '',
+                                'strength': data.get('edge', {}).get('strength', 0) or 0,
+                                'percentile': data.get('edge', {}).get('metrics', {}).get('skew_percentile', 0) or 0,
+                                'direction': data.get('edge', {}).get('direction', '') or '',
+                                'recommendation': data.get('recommendation', '') or '',
+                                'structure': data.get('structure', {}).get('type', '') or '',
+                                'max_loss': data.get('structure', {}).get('max_loss_dollars', 0) or 0,
+                                'max_profit': data.get('structure', {}).get('max_profit_dollars', 0) or 0,
+                                'regime': data.get('regime', {}).get('state', '') or '',
+                                'rationale': data.get('edge', {}).get('rationale', '') or '',
                             })
                     except:
                         pass
