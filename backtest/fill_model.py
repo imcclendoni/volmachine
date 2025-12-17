@@ -1,21 +1,28 @@
 """
 Fill Model for Backtesting.
 
-Handles slippage, commissions, and fill price calculations.
+Handles slippage, commissions, bid/ask modeling, and fill price calculations.
 """
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 import yaml
 from pathlib import Path
 
 
 @dataclass
 class FillConfig:
-    """Configuration for fill model."""
-    slippage_per_leg: float = 0.02      # Dollars per leg
+    """Configuration for fill model with realistic execution modeling."""
+    slippage_per_leg: float = 0.02      # Dollars per leg (base slippage)
     commission_per_contract: float = 0.65
     min_commission: float = 0.00
+    
+    # Bid/Ask modeling (for when only close is available)
+    bid_ask_spread_pct: float = 0.02    # 2% of close price = half-spread
+    liquidity_stress_mult: float = 1.0   # Multiply spread during stress (e.g., 2x)
+    
+    # High-vol detection threshold (ATM IV or VIX proxy)
+    high_vol_threshold: float = 0.30     # 30% IV = high vol
     
     @classmethod
     def from_yaml(cls, path: str = './config/backtest.yaml') -> 'FillConfig':
@@ -34,7 +41,26 @@ class FillConfig:
             slippage_per_leg=slip.get('per_leg', 0.02),
             commission_per_contract=comm.get('per_contract', 0.65),
             min_commission=comm.get('min_per_order', 0.00),
+            bid_ask_spread_pct=slip.get('bid_ask_spread_pct', 0.02),
+            liquidity_stress_mult=slip.get('liquidity_stress_mult', 1.0),
+            high_vol_threshold=slip.get('high_vol_threshold', 0.30),
         )
+    
+    def get_bid_ask(self, close: float, is_high_vol: bool = False) -> tuple:
+        """
+        Model bid/ask from close price.
+        
+        Returns (bid, ask) where:
+        - bid = close - half_spread
+        - ask = close + half_spread
+        """
+        half_spread = close * self.bid_ask_spread_pct
+        if is_high_vol:
+            half_spread *= self.liquidity_stress_mult
+        
+        bid = max(0.01, close - half_spread)
+        ask = close + half_spread
+        return bid, ask
 
 
 def calculate_entry_fill(
@@ -168,4 +194,104 @@ def calculate_realized_pnl(
         'gross_pnl': gross_pnl,
         'commissions': total_commissions,
         'net_pnl': net_pnl,
+    }
+
+
+def calculate_strict_entry_fill(
+    leg_closes: Dict[str, float],
+    leg_sides: Dict[str, str],
+    config: FillConfig,
+    is_high_vol: bool = False,
+) -> Dict[str, Any]:
+    """
+    Calculate entry fill using strict bid/ask bounds.
+    
+    For credit spreads: credit = short_bid - long_ask
+    For debit spreads: debit = long_ask - short_bid
+    
+    Returns 'unexecutable': True if fill would be worse than limiting case.
+    """
+    fill_prices = {}
+    short_credit = 0.0
+    long_debit = 0.0
+    
+    for leg_id, close in leg_closes.items():
+        bid, ask = config.get_bid_ask(close, is_high_vol)
+        side = leg_sides.get(leg_id, 'BUY')
+        
+        if side == 'SELL':
+            # Selling at bid (conservative)
+            fill = bid
+            short_credit += fill
+        else:
+            # Buying at ask (conservative)
+            fill = ask
+            long_debit += fill
+        
+        fill_prices[leg_id] = fill
+    
+    net_premium = short_credit - long_debit
+    
+    # Check if trade is executable (net credit for credit spreads)
+    unexecutable = False
+    if short_credit > 0 and net_premium <= 0:
+        # Credit spread that nets zero or negative - not executable
+        unexecutable = True
+    
+    num_legs = len(leg_closes)
+    commissions = max(num_legs * config.commission_per_contract, config.min_commission)
+    
+    return {
+        'fill_prices': fill_prices,
+        'net_premium': net_premium,
+        'commissions': commissions,
+        'unexecutable': unexecutable,
+        'short_credit': short_credit,
+        'long_debit': long_debit,
+    }
+
+
+def calculate_strict_exit_fill(
+    leg_closes: Dict[str, float],
+    leg_sides: Dict[str, str],  # Original ENTRY sides
+    config: FillConfig,
+    is_high_vol: bool = False,
+) -> Dict[str, Any]:
+    """
+    Calculate exit fill using strict bid/ask bounds.
+    
+    Exit is opposite of entry:
+    - SELL at entry -> BUY at ask to close
+    - BUY at entry -> SELL at bid to close
+    """
+    fill_prices = {}
+    exit_debit = 0.0     # Paid to close short
+    exit_credit = 0.0    # Received to close long
+    
+    for leg_id, close in leg_closes.items():
+        bid, ask = config.get_bid_ask(close, is_high_vol)
+        entry_side = leg_sides.get(leg_id, 'BUY')
+        
+        if entry_side == 'SELL':
+            # We sold, now buy to close at ask
+            fill = ask
+            exit_debit += fill
+        else:
+            # We bought, now sell to close at bid
+            fill = bid
+            exit_credit += fill
+        
+        fill_prices[leg_id] = fill
+    
+    net_premium = exit_credit - exit_debit  # Negative for credit spread exit
+    
+    num_legs = len(leg_closes)
+    commissions = max(num_legs * config.commission_per_contract, config.min_commission)
+    
+    return {
+        'fill_prices': fill_prices,
+        'net_premium': net_premium,
+        'commissions': commissions,
+        'exit_debit': exit_debit,
+        'exit_credit': exit_credit,
     }

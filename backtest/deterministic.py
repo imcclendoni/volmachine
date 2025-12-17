@@ -14,7 +14,14 @@ from typing import Optional, List, Dict, Any, Tuple
 import glob
 
 from .result import BacktestTrade, BacktestMetrics, BacktestResult, ExitReason
-from .fill_model import FillConfig, calculate_entry_fill, calculate_exit_fill, calculate_realized_pnl
+from .fill_model import (
+    FillConfig, 
+    calculate_entry_fill, 
+    calculate_exit_fill, 
+    calculate_realized_pnl,
+    calculate_strict_entry_fill,
+    calculate_strict_exit_fill,
+)
 
 
 class DeterministicBacktester:
@@ -136,16 +143,30 @@ class DeterministicBacktester:
         if not signals:
             return self._empty_result(start_date, end_date, signals_source)
         
+        # Check if using strict fills
+        use_strict = self.config.get('slippage', {}).get('use_strict_fills', True)
+        
         # Simulate each signal
         trades = []
+        unexecutable_count = 0
+        skipped_no_data = 0
+        
         for signal in signals:
-            trade = self._simulate_trade(signal)
-            if trade:
+            trade = self._simulate_trade(signal, use_strict=use_strict)
+            if trade is None:
+                skipped_no_data += 1
+            elif trade == 'unexecutable':
+                unexecutable_count += 1
+            else:
                 trades.append(trade)
                 print(f"  {trade.signal_date} {trade.symbol}: {trade.structure_type} -> "
                       f"${trade.net_pnl:.2f} ({trade.exit_reason.value})")
         
         print(f"\nCompleted {len(trades)} trades")
+        if unexecutable_count > 0:
+            print(f"Unexecutable (bad bid/ask): {unexecutable_count}")
+        if skipped_no_data > 0:
+            print(f"Skipped (no data): {skipped_no_data}")
         
         # Calculate metrics
         metrics = self._calculate_metrics(trades)
@@ -301,12 +322,17 @@ class DeterministicBacktester:
         
         return signals, drop_counts
     
-    def _simulate_trade(self, signal: Dict[str, Any]) -> Optional[BacktestTrade]:
+    def _simulate_trade(self, signal: Dict[str, Any], use_strict: bool = True):
         """
         Simulate a single trade from signal to exit.
         
         Entry: signal_date close
         Exit: determined by exit rules
+        
+        Returns:
+            - BacktestTrade on success
+            - None if no data
+            - 'unexecutable' if bid/ask bounds violated
         """
         candidate = signal['candidate']
         symbol = candidate.get('symbol', '')
@@ -319,23 +345,20 @@ class DeterministicBacktester:
         except:
             return None
         
-        # Get structure legs
+        # Get structure details
+        spread_type = structure.get('spread_type', 'credit')
         legs = structure.get('legs', [])
+        
         if not legs:
             return None
         
-        # Determine spread type
-        spread_type = structure.get('spread_type', 'credit')
-        if not spread_type:
-            spread_type = 'credit' if structure.get('max_profit_dollars', 0) < abs(structure.get('max_loss_dollars', 0)) else 'debit'
-        
-        # Get expiry from first leg
-        expiry_str = legs[0].get('expiry', '')
-        if not expiry_str:
-            return None
-        
+        # Parse expiry from first leg or structure
         try:
-            expiry = date.fromisoformat(expiry_str) if len(expiry_str) == 10 else datetime.strptime(expiry_str, '%Y%m%d').date()
+            expiry_str = structure.get('expiry') or legs[0].get('expiry', '')
+            if isinstance(expiry_str, date):
+                expiry = expiry_str
+            else:
+                expiry = date.fromisoformat(str(expiry_str)[:10])
         except:
             return None
         
@@ -344,12 +367,12 @@ class DeterministicBacktester:
         if dte_at_entry <= 0:
             return None
         
-        # Fetch option data for each leg
+        # Get historical data for each leg
         leg_data = {}
         for leg in legs:
             occ = leg.get('occ_symbol', '')
             if not occ:
-                # Build OCC from components
+                # Build OCC from components if not provided
                 strike = leg.get('strike', 0)
                 right = leg.get('right', 'P')
                 exp_str = expiry.strftime('%y%m%d')
@@ -379,7 +402,14 @@ class DeterministicBacktester:
             entry_closes[occ] = entry_bar['close']
             entry_sides[occ] = data['side']
         
-        entry_fill = calculate_entry_fill(entry_closes, entry_sides, self.fill_config)
+        # Use strict or relaxed fill model
+        if use_strict:
+            entry_fill = calculate_strict_entry_fill(entry_closes, entry_sides, self.fill_config)
+            if entry_fill.get('unexecutable', False):
+                return 'unexecutable'
+        else:
+            entry_fill = calculate_entry_fill(entry_closes, entry_sides, self.fill_config)
+        
         entry_net = entry_fill['net_premium']
         entry_commissions = entry_fill['commissions']
         
