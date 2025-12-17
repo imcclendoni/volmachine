@@ -188,19 +188,21 @@ def create_trade_candidate(
                 # Convert to dict for schema
                 probability_metrics = {
                     "pop_expiry": metrics.pop_expiry,
-                    "p_otm_short_strike": metrics.p_otm_short_strike,
-                    "expected_pnl_expiry": metrics.expected_pnl_expiry,
+                    "p_inside_short_strikes": metrics.p_inside_short_strikes,
+                    "p_between_breakevens": metrics.p_between_breakevens,
+                    "expected_pnl_expiry": metrics.expected_pnl_expiry_binary,
                     "breakeven_distance_pct": metrics.breakeven_distance_pct,
                     "credit_to_width_ratio": metrics.credit_to_width_ratio,
                     "reward_to_risk_ratio": metrics.reward_to_risk_ratio,
-                    "ev_per_dollar_risk": metrics.ev_per_dollar_risk,
+                    "ev_per_dollar_risk": metrics.ev_per_dollar_risk_binary,
                     "stress_scenarios": metrics.stress_scenarios,
                     "assumptions": metrics.assumptions,
                     "warning": metrics.warning,
                 }
-        except Exception:
-            # If probability calculation fails, continue without
-            pass
+        except Exception as e:
+            # Log probability calculation failures for debugging
+            import sys
+            print(f"[WARN] probability_metrics failed for {symbol}: {e}", file=sys.stderr)
     
     return TradeCandidate(
         id=str(uuid4()),
