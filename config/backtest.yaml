@@ -1,0 +1,44 @@
+# Backtest Configuration
+# Deterministic exit rules + cost model
+
+slippage:
+  # Slippage per leg in dollars (added to debit, subtracted from credit)
+  per_leg: 0.02
+
+commissions:
+  # Per contract per leg
+  per_contract: 0.65
+  # Minimum per order
+  min_per_order: 0.00
+
+exit_rules:
+  credit_spread:
+    # Take profit at X% of credit received
+    take_profit_pct: 50
+    # Stop loss at Yx credit (e.g., 2.0 = 2x credit = 100% of spread width)
+    stop_loss_mult: 2.0
+    # Time stop: exit if DTE <= X
+    time_stop_dte: 5
+    # Max hold days (0 = hold to expiry)
+    max_hold_days: 0
+  
+  debit_spread:
+    # Take profit at X% of max profit
+    take_profit_pct: 100
+    # Stop loss at X% of debit paid
+    stop_loss_pct: 50
+    # Time stop: exit if DTE <= X
+    time_stop_dte: 5
+    # Max hold days
+    max_hold_days: 0
+
+# Backtest defaults
+defaults:
+  # Default lookback for backtest
+  lookback_days: 90
+  # Require minimum edge strength
+  min_edge_strength: 0.50
+  # Only include TRADE recommendations
+  trade_only: true
+  # Core universe only
+  symbols: ["SPY", "QQQ", "IWM", "TLT"]

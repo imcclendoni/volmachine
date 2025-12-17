@@ -1883,6 +1883,179 @@ def render_signals_timeline():
                     st.markdown(f"**{symbol}** — {edge_type} ({strength:.0f}%) — {direction}")
 
 
+def render_backtest_tab():
+    """
+    Backtest tab - run and view historical backtests.
+    """
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7)); 
+                border: 1px solid rgba(71,85,105,0.4); border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 2rem;">🔬</span>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">BACKTEST</div>
+                <div style="color: #94a3b8; font-size: 0.9rem;">Historical edge performance analysis</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Config
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    with col1:
+        days = st.selectbox("Lookback Period", [30, 60, 90, 180, 252], index=2)
+    
+    with col2:
+        symbols = st.multiselect(
+            "Symbols", 
+            ["SPY", "QQQ", "IWM", "TLT"],
+            default=["SPY", "QQQ", "IWM", "TLT"]
+        )
+    
+    with col3:
+        run_button = st.button("🚀 Run Backtest", type="primary", use_container_width=True)
+    
+    # Check for existing results in session state
+    if 'backtest_result' not in st.session_state:
+        st.session_state['backtest_result'] = None
+    
+    if run_button:
+        with st.spinner("Running backtest..."):
+            try:
+                from backtest.deterministic import DeterministicBacktester
+                from datetime import date, timedelta
+                
+                end_date = date.today()
+                start_date = end_date - timedelta(days=days)
+                
+                backtester = DeterministicBacktester()
+                result = backtester.run_range(start_date, end_date, symbols=symbols)
+                
+                st.session_state['backtest_result'] = result
+                st.success(f"✅ Backtest complete: {result.metrics.total_trades} trades")
+                
+            except ImportError as e:
+                st.error(f"Missing dependency: {e}")
+                st.info("Run: pip install pyyaml")
+            except Exception as e:
+                st.error(f"Backtest error: {e}")
+    
+    # Display results
+    result = st.session_state.get('backtest_result')
+    
+    if result and result.metrics.total_trades > 0:
+        m = result.metrics
+        
+        st.markdown("---")
+        st.subheader("📊 Summary Metrics")
+        
+        # Metrics row
+        mc1, mc2, mc3, mc4 = st.columns(4)
+        
+        with mc1:
+            st.metric("Total Trades", m.total_trades)
+        with mc2:
+            pnl_delta = "positive" if m.total_pnl > 0 else "inverse"
+            st.metric("Total P&L", f"${m.total_pnl:.2f}", delta=f"${m.avg_pnl:.2f} avg")
+        with mc3:
+            st.metric("Win Rate", f"{m.win_rate:.1f}%", delta=f"{m.winners}W / {m.losers}L")
+        with mc4:
+            st.metric("Profit Factor", f"{m.profit_factor:.2f}")
+        
+        mc5, mc6, mc7, mc8 = st.columns(4)
+        
+        with mc5:
+            st.metric("Avg Win", f"${m.avg_win:.2f}")
+        with mc6:
+            st.metric("Avg Loss", f"${m.avg_loss:.2f}")
+        with mc7:
+            st.metric("Max Drawdown", f"${m.max_drawdown:.2f}")
+        with mc8:
+            st.metric("Avg Hold Days", f"{m.avg_hold_days:.1f}")
+        
+        # Breakdowns
+        st.markdown("---")
+        bc1, bc2 = st.columns(2)
+        
+        with bc1:
+            st.subheader("By Symbol")
+            if m.by_symbol:
+                for sym, data in m.by_symbol.items():
+                    pnl_color = "#10b981" if data['pnl'] > 0 else "#ef4444"
+                    st.markdown(f"""
+                    <div style="background: rgba(30,41,59,0.5); padding: 12px; border-radius: 8px; margin-bottom: 8px;">
+                        <span style="color: #3b82f6; font-weight: 700;">{sym}</span>
+                        <span style="color: #64748b; margin-left: 12px;">{data['trades']} trades</span>
+                        <span style="color: {pnl_color}; margin-left: 12px; font-weight: 600;">${data['pnl']:.2f}</span>
+                        <span style="color: #94a3b8; margin-left: 12px;">{data['win_rate']:.0f}%</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        with bc2:
+            st.subheader("By Edge Type")
+            if m.by_edge_type:
+                for edge, data in m.by_edge_type.items():
+                    pnl_color = "#10b981" if data['pnl'] > 0 else "#ef4444"
+                    st.markdown(f"""
+                    <div style="background: rgba(30,41,59,0.5); padding: 12px; border-radius: 8px; margin-bottom: 8px;">
+                        <span style="color: #a855f7; font-weight: 700;">{edge}</span>
+                        <span style="color: #64748b; margin-left: 12px;">{data['trades']} trades</span>
+                        <span style="color: {pnl_color}; margin-left: 12px; font-weight: 600;">${data['pnl']:.2f}</span>
+                        <span style="color: #94a3b8; margin-left: 12px;">{data['win_rate']:.0f}%</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+        
+        # Trade table
+        st.markdown("---")
+        st.subheader("📋 Trade Log")
+        
+        if result.trades:
+            import pandas as pd
+            
+            trades_data = []
+            for t in result.trades:
+                trades_data.append({
+                    'Date': t.signal_date,
+                    'Symbol': t.symbol,
+                    'Edge': t.edge_type,
+                    'Structure': t.structure_type,
+                    'Entry': f"${t.entry_price:.4f}",
+                    'Exit': f"${t.exit_price:.4f}",
+                    'P&L': f"${t.net_pnl:.2f}",
+                    'Exit Reason': t.exit_reason.value if hasattr(t.exit_reason, 'value') else t.exit_reason,
+                    'Days': t.hold_days,
+                })
+            
+            df = pd.DataFrame(trades_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            
+            # Export CSV
+            csv = df.to_csv(index=False)
+            st.download_button(
+                "📥 Export CSV",
+                csv,
+                file_name=f"backtest_trades_{result.start_date}_{result.end_date}.csv",
+                mime="text/csv"
+            )
+    
+    elif result and result.metrics.total_trades == 0:
+        st.warning("No trades generated in this period.")
+        st.info("""
+        **Possible reasons:**
+        - No signals with recommendation = TRADE
+        - Edge strength below threshold
+        - No saved reports in logs/reports/
+        
+        **Try:**
+        - Run `python3 scripts/run_daily.py --session open` to generate signals
+        - Check Edge History tab for past signals
+        """)
+    
+    else:
+        st.info("Click 'Run Backtest' to analyze historical edge performance.")
+
+
 def main():
     # SIDEBAR NAVIGATION
     with st.sidebar:
@@ -1895,12 +2068,12 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline"],
+            ["📈 Dashboard", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline", "🔬 Backtest"],
             label_visibility="collapsed"
         )
         
         st.markdown("---")
-        st.caption(f"v2.3 • {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"v2.4 • {datetime.now().strftime('%H:%M:%S')}")
     
     # ROUTE TO PAGE
     if page == "📊 Blotter":
@@ -1911,6 +2084,9 @@ def main():
         return
     elif page == "📡 Signals Timeline":
         render_signals_timeline()
+        return
+    elif page == "🔬 Backtest":
+        render_backtest_tab()
         return
     
     # HEADLINE
