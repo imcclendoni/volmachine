@@ -31,8 +31,19 @@ data:
     sandbox: true
   ibkr:
     host: "127.0.0.1"
-    port: 7497
+    port: 4002  # IB Gateway paper (use 7497 for TWS)
     client_id: 1
+
+# IBKR Execution Configuration
+execution:
+  ibkr:
+    host: "127.0.0.1"
+    port: 4002  # IB Gateway paper (4002) or TWS paper (7497)
+    client_id: 99
+    # Paper ports (allowed by default)
+    paper_ports: [4002, 7497]
+    # Live ports (blocked when paper_mode_only=true)
+    live_ports: [4001, 7496]
 
 # Cache Configuration
 cache:

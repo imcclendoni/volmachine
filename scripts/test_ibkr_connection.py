@@ -3,7 +3,10 @@
 Test IBKR Connection for VolMachine.
 
 Quick test to verify IBKR Gateway/TWS connection is working.
-Run with: python3 scripts/test_ibkr_connection.py
+
+Usage:
+    python3 scripts/test_ibkr_connection.py
+    python3 scripts/test_ibkr_connection.py --port 4002 --client-id 99
 
 Expected output on success:
 - Account ID (DUxxxxxxx for paper)
@@ -16,6 +19,7 @@ Exit codes:
 - 2: Live account detected (blocked)
 """
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -26,6 +30,13 @@ from datetime import datetime
 
 
 def main():
+    # Parse CLI arguments
+    parser = argparse.ArgumentParser(description="Test IBKR Gateway/TWS connection")
+    parser.add_argument("--host", default="127.0.0.1", help="IBKR host (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=4002, help="IBKR port (default: 4002 for IB Gateway paper)")
+    parser.add_argument("--client-id", type=int, default=99, help="Client ID (default: 99)")
+    args = parser.parse_args()
+    
     print("=" * 60)
     print("IBKR Connection Test")
     print("=" * 60)
@@ -37,10 +48,10 @@ def main():
         print("   Is ib_insync installed? Run: pip install ib_insync")
         return 1
     
-    # Configuration
-    host = "127.0.0.1"
-    port = 4002  # IB Gateway paper port (use 7497 for TWS)
-    client_id = 99  # Use unique ID to avoid conflicts
+    # Configuration from CLI args
+    host = args.host
+    port = args.port
+    client_id = args.client_id
     
     print(f"\nConfiguration:")
     print(f"  Host: {host}")
