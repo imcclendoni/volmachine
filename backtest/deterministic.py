@@ -438,6 +438,7 @@ class DeterministicBacktester:
             mae = min(mae, mtm_pnl)
             
             # Check exit conditions in priority order:
+            # IMPORTANT: Exit TRIGGERS on day t, but EXECUTES on day t+1 (no lookahead)
             # 1. Take profit (primary goal)
             # 2. Stop loss
             # 3. Time stop (secondary, only if no TP/SL)
@@ -449,23 +450,24 @@ class DeterministicBacktester:
                 # e.g., entry credit $1.50, tp_pct=50 -> TP at $75 profit
                 tp_threshold = credit_received * (tp_pct / 100) * 100  # In dollars
                 if mtm_pnl >= tp_threshold:
-                    exit_date = current
+                    # Execute on NEXT trading day (no lookahead)
+                    exit_date = current + timedelta(days=1)
                     exit_reason = ExitReason.TAKE_PROFIT
                     break
             else:
                 # For debit: profit when position value increased
                 if mtm_pnl >= tp_target * 100:
-                    exit_date = current
+                    exit_date = current + timedelta(days=1)
                     exit_reason = ExitReason.TAKE_PROFIT
                     break
             
-            # 2. Stop loss - based on PnL
+            # 2. Stop loss - based on PnL, execute next day
             if mtm_pnl <= sl_threshold * 100:
-                exit_date = current
+                exit_date = current + timedelta(days=1)
                 exit_reason = ExitReason.STOP_LOSS
                 break
             
-            # 3. Time stop (only if TP/SL not hit)
+            # 3. Time stop (only if TP/SL not hit) - execute same day since pre-planned
             if dte <= time_stop_dte:
                 exit_date = current
                 exit_reason = ExitReason.TIME_STOP
