@@ -1259,10 +1259,31 @@ def main():
     trades = [c for c in candidates if c.get('recommendation') == 'TRADE']
     
     if trades:
-        st.markdown(f"**{len(trades)} Trade{'s' if len(trades) > 1 else ''} Available** — Compare and select:")
+        # Header with count and sort options
+        header_col, sort_col = st.columns([2, 1])
+        with header_col:
+            st.markdown(f"**{len(trades)} Trade{'s' if len(trades) > 1 else ''} Available** — Compare and select:")
+        with sort_col:
+            sort_by = st.selectbox(
+                "Sort by:",
+                ["Return (High → Low)", "Cost (Low → High)", "Symbol (A → Z)"],
+                key="trade_sort",
+                label_visibility="collapsed"
+            )
         
-        # Create columns for cards (max 2 per row)
-        num_cols = min(len(trades), 2)
+        # Sort trades
+        if sort_by == "Return (High → Low)":
+            trades = sorted(trades, key=lambda t: (
+                (t.get('structure', {}).get('max_profit_dollars', 0) / 
+                 max(t.get('structure', {}).get('entry_debit_dollars', 1), 1))
+            ), reverse=True)
+        elif sort_by == "Cost (Low → High)":
+            trades = sorted(trades, key=lambda t: t.get('structure', {}).get('entry_debit_dollars', 0))
+        else:  # Symbol
+            trades = sorted(trades, key=lambda t: t.get('symbol', ''))
+        
+        # Dynamic columns: 3 for many trades, 2 for few
+        num_cols = 3 if len(trades) >= 3 else min(len(trades), 2)
         
         for i in range(0, len(trades), num_cols):
             cols = st.columns(num_cols)
