@@ -8,6 +8,19 @@
 # - Apply strict liquidity and risk caps per symbol
 # - Let opportunity set increase naturally
 
+# ============================================================================
+# EXECUTION CONTROLS (Safety-First)
+# ============================================================================
+execution:
+  # If false, fallback edges (no percentile history) become REVIEW, not TRADE
+  allow_fallback_edges: false
+  
+  # If true, block live trading - paper mode only until history is built
+  paper_mode_only: true
+  
+  # Minimum edge history days required for TRADE recommendation
+  min_history_days: 30
+
 # Default settings applied to all symbols
 defaults:
   enabled: true

@@ -63,6 +63,13 @@ def create_trade_candidate(
     # Calculate dollar values for display
     max_loss_dollars = points_to_dollars(structure.max_loss) if structure.max_loss else 0
     
+    # Check if this is a fallback edge
+    is_fallback_edge = getattr(edge, 'is_fallback', False)
+    
+    # Get execution config (passed via risk_budget)
+    exec_config = (risk_budget or {}).get('execution_config', {})
+    allow_fallback = exec_config.get('allow_fallback_edges', True)  # Default True for backwards compat
+    
     # Determine recommendation
     if not sizing.allowed:
         recommendation = "PASS"
@@ -73,6 +80,14 @@ def create_trade_candidate(
     elif len(validation_messages) > 0:
         recommendation = "REVIEW"
         rationale = f"Structure valid but has warnings: {'; '.join(validation_messages)}"
+    elif is_fallback_edge and not allow_fallback:
+        # CRITICAL: Fallback edges should NOT be traded without explicit approval
+        recommendation = "REVIEW"
+        rationale = (
+            f"FALLBACK EDGE - No percentile history. "
+            f"Edge: {edge.edge_type.value} (strength {edge.strength:.0%}). "
+            f"Enable 'allow_fallback_edges' in config to trade these."
+        )
     else:
         recommendation = "TRADE"
         rationale = (

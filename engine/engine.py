@@ -563,7 +563,7 @@ class VolMachineEngine:
                     candidates.append(candidate)
                     continue
                 
-                # Create TRADE candidate
+                # Create TRADE candidate (with execution config for fallback handling)
                 candidate = create_trade_candidate(
                     symbol=symbol,
                     structure=structure,
@@ -571,6 +571,11 @@ class VolMachineEngine:
                     regime=regime,
                     sizing=sizing,
                     validation_messages=validation.warnings,
+                    risk_budget={
+                        'execution_config': self.universe.get('execution', {}),
+                        'spot_price': spot_price if 'spot_price' in dir() else None,
+                        'config': self.config,
+                    },
                 )
                 
                 candidates.append(candidate)
