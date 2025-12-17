@@ -686,6 +686,9 @@ def main():
     parser.add_argument("--output", default="./logs/backfill/v4/reports")
     parser.add_argument("--delay", type=float, default=0.15)
     parser.add_argument("--build-history", action="store_true", help="Build skew history only")
+    parser.add_argument("--resume", action="store_true", default=True, help="Skip dates where all symbols already have reports")
+    parser.add_argument("--no-resume", dest="resume", action="store_false", help="Process all dates even if reports exist")
+    parser.add_argument("--checkpoint-every", type=int, default=25, help="Save history to cache every N days")
     
     args = parser.parse_args()
     
@@ -739,12 +742,30 @@ def main():
         histories[sym] = {'skew': skew, 'percentile': pctl}
     
     current = start_date
+    checkpoint_counter = 0
+    skipped_resume = 0
+    
     while current <= end_date:
         if current.weekday() >= 5:
             current += timedelta(days=1)
             continue
         
+        # Resume mode: skip if all symbols already have reports for this date
+        if args.resume and not args.build_history:
+            execution_date = get_next_trading_day(current)
+            all_exist = True
+            for sym in args.symbols:
+                report_path = output_dir / f"{execution_date.isoformat()}__{sym}__backfill.json"
+                if not report_path.exists():
+                    all_exist = False
+                    break
+            if all_exist:
+                skipped_resume += 1
+                current += timedelta(days=1)
+                continue
+        
         dates_processed += 1
+        checkpoint_counter += 1
         print(f"Processing {current}...", end=" ", flush=True)
         
         day_signals = []
@@ -819,15 +840,24 @@ def main():
         else:
             print("scanned" if not args.build_history else "recorded")
         
+        # Checkpoint: save history periodically to survive interruptions
+        if checkpoint_counter >= args.checkpoint_every:
+            for sym in args.symbols:
+                save_skew_history(sym, histories[sym]['skew'], histories[sym]['percentile'])
+            checkpoint_counter = 0
+            print(f"  [Checkpoint saved - {dates_processed} days processed]")
+        
         current += timedelta(days=1)
     
-    # Save histories
+    # Final save of histories
     for symbol in args.symbols:
         save_skew_history(symbol, histories[symbol]['skew'], histories[symbol]['percentile'])
     
     print()
     print(f"=== Backfill Complete ===")
     print(f"Dates processed: {dates_processed}")
+    if skipped_resume > 0:
+        print(f"Dates skipped (resume): {skipped_resume}")
     print(f"Config: min_delta={MIN_DELTA}, window={SKEW_DELTA_WINDOW}, widths={WIDTH_CASCADE}")
     
     # Data integrity report
