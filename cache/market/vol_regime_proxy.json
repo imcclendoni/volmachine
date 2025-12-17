@@ -1,0 +1,534 @@
+{
+  "generated_at": "2025-12-16T20:59:20.929503",
+  "days_requested": 90,
+  "days_fetched": 65,
+  "data_source": "VXX/SVXY ETFs (I:VIX requires higher Polygon plan)",
+  "label_distribution": {
+    "normal": 49,
+    "low_vol": 12,
+    "elevated": 2,
+    "high_vol": 2
+  },
+  "history": {
+    "2025-09-15": {
+      "vxx_close": 34.53,
+      "svxy_close": 49.97,
+      "vxx_20d_return": -9.4,
+      "svxy_20d_return": 4.8,
+      "vxx_vs_sma_pct": -3.7,
+      "label": "normal"
+    },
+    "2025-09-16": {
+      "vxx_close": 33.32,
+      "svxy_close": 50.91,
+      "vxx_20d_return": -14.2,
+      "svxy_20d_return": 7.9,
+      "vxx_vs_sma_pct": -6.3,
+      "label": "low_vol"
+    },
+    "2025-09-17": {
+      "vxx_close": 33.17,
+      "svxy_close": 50.84,
+      "vxx_20d_return": -14.2,
+      "svxy_20d_return": 7.5,
+      "vxx_vs_sma_pct": -6.0,
+      "label": "low_vol"
+    },
+    "2025-09-18": {
+      "vxx_close": 33.18,
+      "svxy_close": 50.89,
+      "vxx_20d_return": -15.5,
+      "svxy_20d_return": 8.4,
+      "vxx_vs_sma_pct": -5.2,
+      "label": "low_vol"
+    },
+    "2025-09-21": {
+      "vxx_close": 33.8,
+      "svxy_close": 50.49,
+      "vxx_20d_return": -6.1,
+      "svxy_20d_return": 3.2,
+      "vxx_vs_sma_pct": -3.1,
+      "label": "normal"
+    },
+    "2025-09-22": {
+      "vxx_close": 34.2,
+      "svxy_close": 50.15,
+      "vxx_20d_return": -5.4,
+      "svxy_20d_return": 2.7,
+      "vxx_vs_sma_pct": -1.7,
+      "label": "normal"
+    },
+    "2025-09-23": {
+      "vxx_close": 33.86,
+      "svxy_close": 50.48,
+      "vxx_20d_return": -5.6,
+      "svxy_20d_return": 3.0,
+      "vxx_vs_sma_pct": -2.4,
+      "label": "normal"
+    },
+    "2025-09-24": {
+      "vxx_close": 34.3,
+      "svxy_close": 50.1,
+      "vxx_20d_return": -4.7,
+      "svxy_20d_return": 2.3,
+      "vxx_vs_sma_pct": -0.9,
+      "label": "normal"
+    },
+    "2025-09-25": {
+      "vxx_close": 32.84,
+      "svxy_close": 51.21,
+      "vxx_20d_return": -7.4,
+      "svxy_20d_return": 4.1,
+      "vxx_vs_sma_pct": -4.7,
+      "label": "normal"
+    },
+    "2025-09-28": {
+      "vxx_close": 33.27,
+      "svxy_close": 50.83,
+      "vxx_20d_return": -8.3,
+      "svxy_20d_return": 4.3,
+      "vxx_vs_sma_pct": -3.0,
+      "label": "normal"
+    },
+    "2025-09-29": {
+      "vxx_close": 33.16,
+      "svxy_close": 50.94,
+      "vxx_20d_return": -11.3,
+      "svxy_20d_return": 6.1,
+      "vxx_vs_sma_pct": -2.8,
+      "label": "low_vol"
+    },
+    "2025-09-30": {
+      "vxx_close": 32.97,
+      "svxy_close": 51.07,
+      "vxx_20d_return": -9.6,
+      "svxy_20d_return": 5.0,
+      "vxx_vs_sma_pct": -2.8,
+      "label": "normal"
+    },
+    "2025-10-01": {
+      "vxx_close": 33.44,
+      "svxy_close": 50.71,
+      "vxx_20d_return": -5.5,
+      "svxy_20d_return": 2.9,
+      "vxx_vs_sma_pct": -1.2,
+      "label": "normal"
+    },
+    "2025-10-02": {
+      "vxx_close": 33.25,
+      "svxy_close": 50.96,
+      "vxx_20d_return": -6.3,
+      "svxy_20d_return": 3.4,
+      "vxx_vs_sma_pct": -1.4,
+      "label": "normal"
+    },
+    "2025-10-05": {
+      "vxx_close": 33.05,
+      "svxy_close": 51.04,
+      "vxx_20d_return": -5.1,
+      "svxy_20d_return": 2.6,
+      "vxx_vs_sma_pct": -1.7,
+      "label": "normal"
+    },
+    "2025-10-06": {
+      "vxx_close": 33.77,
+      "svxy_close": 50.47,
+      "vxx_20d_return": -2.5,
+      "svxy_20d_return": 1.2,
+      "vxx_vs_sma_pct": 0.5,
+      "label": "normal"
+    },
+    "2025-10-07": {
+      "vxx_close": 33.24,
+      "svxy_close": 50.96,
+      "vxx_20d_return": -3.5,
+      "svxy_20d_return": 2.0,
+      "vxx_vs_sma_pct": -0.9,
+      "label": "normal"
+    },
+    "2025-10-08": {
+      "vxx_close": 33.23,
+      "svxy_close": 50.9,
+      "vxx_20d_return": -1.3,
+      "svxy_20d_return": 0.6,
+      "vxx_vs_sma_pct": -0.8,
+      "label": "normal"
+    },
+    "2025-10-09": {
+      "vxx_close": 37.47,
+      "svxy_close": 47.67,
+      "vxx_20d_return": 11.3,
+      "svxy_20d_return": -5.8,
+      "vxx_vs_sma_pct": 11.2,
+      "label": "elevated"
+    },
+    "2025-10-12": {
+      "vxx_close": 34.62,
+      "svxy_close": 49.47,
+      "vxx_20d_return": 2.1,
+      "svxy_20d_return": -1.8,
+      "vxx_vs_sma_pct": 2.6,
+      "label": "normal"
+    },
+    "2025-10-13": {
+      "vxx_close": 36.15,
+      "svxy_close": 48.34,
+      "vxx_20d_return": 4.7,
+      "svxy_20d_return": -3.3,
+      "vxx_vs_sma_pct": 6.9,
+      "label": "normal"
+    },
+    "2025-10-14": {
+      "vxx_close": 36.58,
+      "svxy_close": 48.14,
+      "vxx_20d_return": 9.8,
+      "svxy_20d_return": -5.4,
+      "vxx_vs_sma_pct": 7.7,
+      "label": "normal"
+    },
+    "2025-10-15": {
+      "vxx_close": 39.97,
+      "svxy_close": 45.77,
+      "vxx_20d_return": 20.5,
+      "svxy_20d_return": -10.0,
+      "vxx_vs_sma_pct": 16.5,
+      "label": "high_vol"
+    },
+    "2025-10-16": {
+      "vxx_close": 36.95,
+      "svxy_close": 47.72,
+      "vxx_20d_return": 11.4,
+      "svxy_20d_return": -6.2,
+      "vxx_vs_sma_pct": 7.1,
+      "label": "normal"
+    },
+    "2025-10-19": {
+      "vxx_close": 33.99,
+      "svxy_close": 49.58,
+      "vxx_20d_return": 0.6,
+      "svxy_20d_return": -1.8,
+      "vxx_vs_sma_pct": -1.5,
+      "label": "normal"
+    },
+    "2025-10-20": {
+      "vxx_close": 33.72,
+      "svxy_close": 49.72,
+      "vxx_20d_return": -1.4,
+      "svxy_20d_return": -0.9,
+      "vxx_vs_sma_pct": -2.2,
+      "label": "normal"
+    },
+    "2025-10-21": {
+      "vxx_close": 34.25,
+      "svxy_close": 49.33,
+      "vxx_20d_return": 1.2,
+      "svxy_20d_return": -2.3,
+      "vxx_vs_sma_pct": -0.8,
+      "label": "normal"
+    },
+    "2025-10-22": {
+      "vxx_close": 33.47,
+      "svxy_close": 49.89,
+      "vxx_20d_return": -2.4,
+      "svxy_20d_return": -0.4,
+      "vxx_vs_sma_pct": -2.9,
+      "label": "normal"
+    },
+    "2025-10-23": {
+      "vxx_close": 33.08,
+      "svxy_close": 50.27,
+      "vxx_20d_return": 0.7,
+      "svxy_20d_return": -1.8,
+      "vxx_vs_sma_pct": -4.1,
+      "label": "normal"
+    },
+    "2025-10-26": {
+      "vxx_close": 32,
+      "svxy_close": 50.96,
+      "vxx_20d_return": -3.8,
+      "svxy_20d_return": 0.3,
+      "vxx_vs_sma_pct": -7.0,
+      "label": "normal"
+    },
+    "2025-10-27": {
+      "vxx_close": 32.93,
+      "svxy_close": 50.25,
+      "vxx_20d_return": -0.7,
+      "svxy_20d_return": -1.4,
+      "vxx_vs_sma_pct": -4.3,
+      "label": "normal"
+    },
+    "2025-10-28": {
+      "vxx_close": 33.57,
+      "svxy_close": 49.83,
+      "vxx_20d_return": 1.8,
+      "svxy_20d_return": -2.4,
+      "vxx_vs_sma_pct": -2.5,
+      "label": "normal"
+    },
+    "2025-10-29": {
+      "vxx_close": 33.83,
+      "svxy_close": 49.66,
+      "vxx_20d_return": 1.2,
+      "svxy_20d_return": -2.1,
+      "vxx_vs_sma_pct": -1.8,
+      "label": "normal"
+    },
+    "2025-10-30": {
+      "vxx_close": 34,
+      "svxy_close": 49.68,
+      "vxx_20d_return": 2.3,
+      "svxy_20d_return": -2.5,
+      "vxx_vs_sma_pct": -1.4,
+      "label": "normal"
+    },
+    "2025-11-02": {
+      "vxx_close": 33.68,
+      "svxy_close": 49.89,
+      "vxx_20d_return": 1.9,
+      "svxy_20d_return": -2.3,
+      "vxx_vs_sma_pct": -2.4,
+      "label": "normal"
+    },
+    "2025-11-03": {
+      "vxx_close": 34.89,
+      "svxy_close": 48.86,
+      "vxx_20d_return": 3.3,
+      "svxy_20d_return": -3.2,
+      "vxx_vs_sma_pct": 0.9,
+      "label": "normal"
+    },
+    "2025-11-04": {
+      "vxx_close": 33.66,
+      "svxy_close": 49.78,
+      "vxx_20d_return": 1.3,
+      "svxy_20d_return": -2.3,
+      "vxx_vs_sma_pct": -2.7,
+      "label": "normal"
+    },
+    "2025-11-05": {
+      "vxx_close": 34.99,
+      "svxy_close": 48.72,
+      "vxx_20d_return": 5.3,
+      "svxy_20d_return": -4.3,
+      "vxx_vs_sma_pct": 0.9,
+      "label": "normal"
+    },
+    "2025-11-06": {
+      "vxx_close": 34.81,
+      "svxy_close": 48.91,
+      "vxx_20d_return": -7.1,
+      "svxy_20d_return": 2.6,
+      "vxx_vs_sma_pct": 0.7,
+      "label": "normal"
+    },
+    "2025-11-09": {
+      "vxx_close": 32.85,
+      "svxy_close": 50.34,
+      "vxx_20d_return": -5.1,
+      "svxy_20d_return": 1.8,
+      "vxx_vs_sma_pct": -4.7,
+      "label": "normal"
+    },
+    "2025-11-10": {
+      "vxx_close": 32.78,
+      "svxy_close": 50.4,
+      "vxx_20d_return": -9.3,
+      "svxy_20d_return": 4.3,
+      "vxx_vs_sma_pct": -4.4,
+      "label": "normal"
+    },
+    "2025-11-11": {
+      "vxx_close": 32.91,
+      "svxy_close": 50.2,
+      "vxx_20d_return": -10.0,
+      "svxy_20d_return": 4.3,
+      "vxx_vs_sma_pct": -3.5,
+      "label": "low_vol"
+    },
+    "2025-11-12": {
+      "vxx_close": 35.22,
+      "svxy_close": 48.62,
+      "vxx_20d_return": -11.9,
+      "svxy_20d_return": 6.2,
+      "vxx_vs_sma_pct": 4.0,
+      "label": "low_vol"
+    },
+    "2025-11-13": {
+      "vxx_close": 34.57,
+      "svxy_close": 48.83,
+      "vxx_20d_return": -6.4,
+      "svxy_20d_return": 2.3,
+      "vxx_vs_sma_pct": 2.4,
+      "label": "normal"
+    },
+    "2025-11-16": {
+      "vxx_close": 36.35,
+      "svxy_close": 47.55,
+      "vxx_20d_return": 6.9,
+      "svxy_20d_return": -4.1,
+      "vxx_vs_sma_pct": 7.3,
+      "label": "normal"
+    },
+    "2025-11-17": {
+      "vxx_close": 37.53,
+      "svxy_close": 46.73,
+      "vxx_20d_return": 11.3,
+      "svxy_20d_return": -6.0,
+      "vxx_vs_sma_pct": 10.2,
+      "label": "elevated"
+    },
+    "2025-11-18": {
+      "vxx_close": 36.83,
+      "svxy_close": 47.38,
+      "vxx_20d_return": 7.5,
+      "svxy_20d_return": -4.0,
+      "vxx_vs_sma_pct": 7.7,
+      "label": "normal"
+    },
+    "2025-11-19": {
+      "vxx_close": 39.48,
+      "svxy_close": 45.62,
+      "vxx_20d_return": 18.0,
+      "svxy_20d_return": -8.6,
+      "vxx_vs_sma_pct": 14.4,
+      "label": "high_vol"
+    },
+    "2025-11-20": {
+      "vxx_close": 37.32,
+      "svxy_close": 46.85,
+      "vxx_20d_return": 12.8,
+      "svxy_20d_return": -6.8,
+      "vxx_vs_sma_pct": 7.5,
+      "label": "normal"
+    },
+    "2025-11-23": {
+      "vxx_close": 34.78,
+      "svxy_close": 48.56,
+      "vxx_20d_return": 8.7,
+      "svxy_20d_return": -4.7,
+      "vxx_vs_sma_pct": -0.2,
+      "label": "normal"
+    },
+    "2025-11-24": {
+      "vxx_close": 33.68,
+      "svxy_close": 49.26,
+      "vxx_20d_return": 2.3,
+      "svxy_20d_return": -2.0,
+      "vxx_vs_sma_pct": -3.5,
+      "label": "normal"
+    },
+    "2025-11-25": {
+      "vxx_close": 32.77,
+      "svxy_close": 50.01,
+      "vxx_20d_return": -2.4,
+      "svxy_20d_return": 0.4,
+      "vxx_vs_sma_pct": -6.0,
+      "label": "normal"
+    },
+    "2025-11-27": {
+      "vxx_close": 32.1,
+      "svxy_close": 50.34,
+      "vxx_20d_return": -5.1,
+      "svxy_20d_return": 1.4,
+      "vxx_vs_sma_pct": -7.7,
+      "label": "normal"
+    },
+    "2025-11-30": {
+      "vxx_close": 32.06,
+      "svxy_close": 50.52,
+      "vxx_20d_return": -5.7,
+      "svxy_20d_return": 1.7,
+      "vxx_vs_sma_pct": -7.5,
+      "label": "normal"
+    },
+    "2025-12-01": {
+      "vxx_close": 31.7,
+      "svxy_close": 50.88,
+      "vxx_20d_return": -5.9,
+      "svxy_20d_return": 2.0,
+      "vxx_vs_sma_pct": -8.3,
+      "label": "normal"
+    },
+    "2025-12-02": {
+      "vxx_close": 31.42,
+      "svxy_close": 51.02,
+      "vxx_20d_return": -9.9,
+      "svxy_20d_return": 4.4,
+      "vxx_vs_sma_pct": -8.6,
+      "label": "normal"
+    },
+    "2025-12-03": {
+      "vxx_close": 31.09,
+      "svxy_close": 51.28,
+      "vxx_20d_return": -7.6,
+      "svxy_20d_return": 3.0,
+      "vxx_vs_sma_pct": -9.3,
+      "label": "normal"
+    },
+    "2025-12-04": {
+      "vxx_close": 30.72,
+      "svxy_close": 51.6,
+      "vxx_20d_return": -12.2,
+      "svxy_20d_return": 5.9,
+      "vxx_vs_sma_pct": -9.8,
+      "label": "low_vol"
+    },
+    "2025-12-07": {
+      "vxx_close": 31.08,
+      "svxy_close": 51.25,
+      "vxx_20d_return": -10.7,
+      "svxy_20d_return": 4.8,
+      "vxx_vs_sma_pct": -8.2,
+      "label": "low_vol"
+    },
+    "2025-12-08": {
+      "vxx_close": 31.24,
+      "svxy_close": 51.18,
+      "vxx_20d_return": -4.9,
+      "svxy_20d_return": 1.7,
+      "vxx_vs_sma_pct": -7.5,
+      "label": "normal"
+    },
+    "2025-12-09": {
+      "vxx_close": 30.02,
+      "svxy_close": 52.22,
+      "vxx_20d_return": -8.4,
+      "svxy_20d_return": 3.6,
+      "vxx_vs_sma_pct": -10.8,
+      "label": "normal"
+    },
+    "2025-12-10": {
+      "vxx_close": 29.48,
+      "svxy_close": 52.54,
+      "vxx_20d_return": -10.4,
+      "svxy_20d_return": 4.7,
+      "vxx_vs_sma_pct": -11.9,
+      "label": "low_vol"
+    },
+    "2025-12-11": {
+      "vxx_close": 29.53,
+      "svxy_close": 52.62,
+      "vxx_20d_return": -16.2,
+      "svxy_20d_return": 8.2,
+      "vxx_vs_sma_pct": -11.0,
+      "label": "low_vol"
+    },
+    "2025-12-14": {
+      "vxx_close": 29.56,
+      "svxy_close": 52.62,
+      "vxx_20d_return": -14.5,
+      "svxy_20d_return": 7.8,
+      "vxx_vs_sma_pct": -10.3,
+      "label": "low_vol"
+    },
+    "2025-12-15": {
+      "vxx_close": 29.53,
+      "svxy_close": 52.66,
+      "vxx_20d_return": -18.8,
+      "svxy_20d_return": 10.8,
+      "vxx_vs_sma_pct": -9.4,
+      "label": "low_vol"
+    }
+  }
+}
