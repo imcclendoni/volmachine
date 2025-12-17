@@ -375,7 +375,7 @@ def create_combo_order(long_leg: Option, short_leg: Option, quantity: int,
 
 
 def preview_order(ib: IB, contract: Contract, order: Order) -> dict:
-    """Preview order (transmit=False) and return status."""
+    """Preview order (transmit=False) and return status. Does NOT record to blotter."""
     order.transmit = False
     
     print("\n👁️ Preview order (transmit=False)...")
@@ -394,11 +394,105 @@ def preview_order(ib: IB, contract: Contract, order: Order) -> dict:
     return result
 
 
+def submit_order(
+    ib: IB, 
+    contract: Contract, 
+    order: Order,
+    symbol: str,
+    spread_type: str,
+    entry_price: float,
+    spread_width: float,
+    dte: int,
+    long_leg: Option,
+    short_leg: Option,
+    spot_price: float,
+) -> dict:
+    """
+    Submit order with transmit=True and record to blotter.
+    
+    Only records to blotter on successful submission.
+    """
+    from execution.blotter import get_blotter, create_trade_from_ibkr_order
+    
+    order.transmit = True
+    
+    print("\n🚀 Submitting order (transmit=True)...")
+    
+    trade = ib.placeOrder(contract, order)
+    ib.sleep(3)
+    
+    result = {
+        'orderId': trade.order.orderId,
+        'permId': trade.order.permId,
+        'status': trade.orderStatus.status,
+    }
+    
+    print(f"   Order ID: {result['orderId']}")
+    print(f"   Perm ID: {result['permId']}")
+    print(f"   Status: {result['status']}")
+    
+    # Only record to blotter if order was accepted (not rejected)
+    if result['status'] not in ['Inactive', 'Cancelled', 'ApiCancelled']:
+        print("\n📝 Recording trade to blotter...")
+        
+        # Build leg info
+        legs = [
+            {
+                'con_id': long_leg.conId,
+                'local_symbol': long_leg.localSymbol,
+                'strike': long_leg.strike,
+                'expiry': long_leg.lastTradeDateOrContractMonth,
+                'right': long_leg.right,
+                'side': 'BUY',
+                'quantity': 1,
+            },
+            {
+                'con_id': short_leg.conId,
+                'local_symbol': short_leg.localSymbol,
+                'strike': short_leg.strike,
+                'expiry': short_leg.lastTradeDateOrContractMonth,
+                'right': short_leg.right,
+                'side': 'SELL',
+                'quantity': 1,
+            },
+        ]
+        
+        # Signed entry price (positive=credit, negative=debit)
+        signed_entry = entry_price if spread_type == 'credit' else -entry_price
+        
+        paper_trade = create_trade_from_ibkr_order(
+            symbol=symbol,
+            spread_type=spread_type,
+            entry_price=signed_entry,
+            legs=legs,
+            ibkr_order_id=result['orderId'],
+            ibkr_perm_id=result['permId'],
+            structure=f"{spread_type}_spread",
+            spread_width=spread_width,
+            dte=dte,
+            spot_price=spot_price,
+        )
+        
+        blotter = get_blotter()
+        trade_id = blotter.record_entry(paper_trade)
+        result['trade_id'] = trade_id
+        
+        print(f"   Trade ID: {trade_id}")
+        print(f"   Max Profit: ${paper_trade.max_profit_dollars:.2f}")
+        print(f"   Max Loss: ${paper_trade.max_loss_dollars:.2f}")
+    else:
+        print(f"\n⚠️ Order rejected - NOT recording to blotter")
+    
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="Submit test order to IBKR paper")
     parser.add_argument('--paper', action='store_true', required=True, help='Confirm paper trading')
-    parser.add_argument('--dry-run', action='store_true', required=True, 
-                        help='Preview only (required until reliable quotes)')
+    parser.add_argument('--dry-run', action='store_true', 
+                        help='Preview only (transmit=False, no blotter)')
+    parser.add_argument('--submit', action='store_true',
+                        help='Submit order (transmit=True, records to blotter)')
     parser.add_argument('--verbose', '-v', action='store_true', help='Show full stack traces')
     parser.add_argument('--host', default='127.0.0.1')
     parser.add_argument('--port', type=int, default=4002)
@@ -407,20 +501,38 @@ def main():
     parser.add_argument('--slippage', type=float, default=0.10)
     args = parser.parse_args()
     
+    # Require exactly one of --dry-run or --submit
+    if not args.dry_run and not args.submit:
+        print("❌ Must specify --dry-run or --submit")
+        return 1
+    if args.dry_run and args.submit:
+        print("❌ Cannot specify both --dry-run and --submit")
+        return 1
+    
+    mode = "DRY RUN (preview only)" if args.dry_run else "LIVE SUBMIT (records to blotter)"
+    
     print("=" * 60)
     print("IBKR Paper Test Order — Polygon Priced")
     print("=" * 60)
-    print(f"Mode: DRY RUN ONLY (preview)")
+    print(f"Mode: {mode}")
     print(f"Port: {args.port}")
     print()
     
     ib = None
+    spot_price = 0.0
+    
     try:
         # Connect
         ib = connect_ibkr(args.host, args.port, args.client_id)
         
         # Find spread with Polygon pricing
         long_put, short_put, width, long_price, short_price = find_priced_spread(ib)
+        spot_price = polygon_get_spot('SPY')
+        
+        # Calculate DTE from expiry
+        expiry_str = long_put.lastTradeDateOrContractMonth
+        expiry_date = datetime.strptime(expiry_str, '%Y%m%d')
+        dte = (expiry_date - datetime.now()).days
         
         # Calculate limit (returns spread_type and limit)
         spread_type, limit = calculate_combo_limit(long_price, short_price, width, 
@@ -430,17 +542,44 @@ def main():
         bag, order = create_combo_order(long_put, short_put, args.quantity, 
                                          spread_type, limit)
         
-        # Preview only
-        result = preview_order(ib, bag, order)
-        
-        print("\n" + "=" * 60)
-        print("TEST COMPLETE")
-        print("=" * 60)
-        print(f"Order ID: {result['orderId']}")
-        print(f"Status: {result['status']}")
-        print()
-        print("⚠️ DRY RUN ONLY - transmit=False")
-        print("Live submission requires IBKR market data subscription")
+        if args.dry_run:
+            # Preview only - no blotter
+            result = preview_order(ib, bag, order)
+            
+            print("\n" + "=" * 60)
+            print("DRY RUN COMPLETE")
+            print("=" * 60)
+            print(f"Order ID: {result['orderId']}")
+            print(f"Status: {result['status']}")
+            print()
+            print("⚠️ Order NOT submitted (transmit=False)")
+            print("⚠️ NOT recorded to blotter")
+            print()
+            print("To submit for real: python3 scripts/submit_test_order.py --paper --submit")
+        else:
+            # Live submit - records to blotter
+            result = submit_order(
+                ib, bag, order,
+                symbol='SPY',
+                spread_type=spread_type,
+                entry_price=limit,
+                spread_width=width,
+                dte=dte,
+                long_leg=long_put,
+                short_leg=short_put,
+                spot_price=spot_price,
+            )
+            
+            print("\n" + "=" * 60)
+            print("ORDER SUBMITTED")
+            print("=" * 60)
+            print(f"Order ID: {result['orderId']}")
+            print(f"Perm ID: {result.get('permId', 'N/A')}")
+            print(f"Status: {result['status']}")
+            if 'trade_id' in result:
+                print(f"Trade ID: {result['trade_id']}")
+                print()
+                print("✅ Recorded to blotter: logs/blotter/trades.jsonl")
         
         return 0
         
@@ -481,3 +620,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

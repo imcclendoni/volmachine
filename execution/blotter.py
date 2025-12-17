@@ -3,20 +3,16 @@ Paper Trading Blotter for VolMachine.
 
 Tracks all paper trades with full PnL attribution for edge analysis.
 
-Schema per trade:
+Schema per trade (v2):
 - trade_id: unique identifier
 - timestamp: entry time
-- symbol: underlying
-- edge_type: skew_extremes, vol_risk_premium, etc.
-- edge_percentile: percentile at entry (0-100)
-- regime: TREND/CHOP/REVERSAL
-- structure: credit_spread, iron_condor, etc.
-- legs: list of {strike, expiry, side, quantity, price}
-- entry_credit/debit: net premium
-- exit_credit/debit: net premium at close
-- realized_pnl: dollars
-- exit_reason: expiry, stop_loss, profit_target, manual
-- diagnostics: delta_proxy_used, strike_distance, etc.
+- symbol, edge_type, edge_percentile, regime, structure, dte
+- entry_price: signed net (positive=credit, negative=debit)
+- exit_price: signed net at close
+- max_loss_dollars, max_profit_dollars
+- legs: list with conId, localSymbol, strike, side, price
+- ibkr_order_id, ibkr_perm_id
+- realized_pnl, exit_reason
 """
 
 import json
@@ -30,13 +26,18 @@ import uuid
 @dataclass
 class TradeLeg:
     """Single leg of an option trade."""
-    strike: float
-    expiry: str  # YYYYMMDD
-    right: str  # P or C
-    side: str  # BUY or SELL
-    quantity: int
-    entry_price: float
+    con_id: int = 0              # IBKR conId
+    local_symbol: str = ""       # IBKR localSymbol (e.g., "SPY   251220P00680000")
+    strike: float = 0.0
+    expiry: str = ""             # YYYYMMDD
+    right: str = ""              # P or C
+    side: str = ""               # BUY or SELL
+    quantity: int = 1
+    entry_price: float = 0.0
     exit_price: Optional[float] = None
+    
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass
@@ -49,37 +50,44 @@ class PaperTrade:
     # Symbol and edge
     symbol: str = ""
     edge_type: str = ""
-    edge_percentile: float = 0.0
+    edge_percentile: float = 0.0  # 0-100
     
     # Market context
-    regime: str = ""  # TREND, CHOP, REVERSAL
-    vol_regime: str = ""  # LOW, NORMAL, HIGH, EXTREME
+    regime: str = ""              # TREND, CHOP, REVERSAL
+    vol_regime: str = ""          # LOW, NORMAL, HIGH, EXTREME
     spot_price: float = 0.0
     
     # Structure
-    structure: str = ""  # credit_spread, iron_condor, butterfly, etc.
-    spread_width: float = 0.0
+    structure: str = ""           # credit_spread, debit_spread, iron_condor, etc.
+    spread_type: str = ""         # "credit" or "debit"
+    spread_width: float = 0.0     # Width in dollars
     dte: int = 0
     
-    # Legs
+    # Legs (list of TradeLeg dicts)
     legs: List[Dict[str, Any]] = field(default_factory=list)
     
-    # Entry pricing
-    entry_credit: float = 0.0  # Positive = credit received
-    entry_debit: float = 0.0   # Positive = debit paid
+    # Entry pricing (SIGNED: positive=credit received, negative=debit paid)
+    entry_price: float = 0.0
+    
+    # Risk metrics
+    max_loss_dollars: float = 0.0
+    max_profit_dollars: float = 0.0
+    
+    # IBKR order tracking
+    ibkr_order_id: Optional[int] = None
+    ibkr_perm_id: Optional[int] = None
     
     # Exit (filled when closed)
     exit_timestamp: Optional[str] = None
-    exit_credit: float = 0.0
-    exit_debit: float = 0.0
-    exit_reason: str = ""  # expiry, stop_loss, profit_target, manual, time_decay
+    exit_price: float = 0.0       # SIGNED: positive=credit, negative=debit
+    exit_reason: str = ""         # expiry, stop_loss, profit_target, manual
     
     # PnL
-    realized_pnl: float = 0.0  # Dollars
-    realized_pnl_pct: float = 0.0  # Percentage of max risk
+    realized_pnl: float = 0.0     # Dollars (per contract * 100)
+    realized_pnl_pct: float = 0.0 # Percentage of max risk
     
     # Status
-    status: str = "open"  # open, closed, cancelled
+    status: str = "open"          # open, closed, cancelled
     
     # Diagnostics
     diagnostics: Dict[str, Any] = field(default_factory=dict)
@@ -89,6 +97,14 @@ class PaperTrade:
     
     @classmethod
     def from_dict(cls, data: dict) -> 'PaperTrade':
+        # Handle legacy fields
+        if 'entry_credit' in data:
+            data['entry_price'] = data.pop('entry_credit', 0) or -data.pop('entry_debit', 0)
+        if 'exit_credit' in data:
+            data['exit_price'] = data.pop('exit_credit', 0) or -data.pop('exit_debit', 0)
+        # Remove unknown fields
+        known_fields = {f.name for f in cls.__dataclass_fields__.values()}
+        data = {k: v for k, v in data.items() if k in known_fields}
         return cls(**data)
 
 
@@ -111,9 +127,12 @@ class Blotter:
             with open(self.path, 'r') as f:
                 for line in f:
                     if line.strip():
-                        data = json.loads(line)
-                        trade = PaperTrade.from_dict(data)
-                        self._trades[trade.trade_id] = trade
+                        try:
+                            data = json.loads(line)
+                            trade = PaperTrade.from_dict(data)
+                            self._trades[trade.trade_id] = trade
+                        except Exception:
+                            pass  # Skip malformed lines
     
     def _append(self, trade: PaperTrade):
         """Append trade to JSONL file."""
@@ -130,35 +149,32 @@ class Blotter:
     def record_exit(
         self, 
         trade_id: str, 
-        exit_credit: float = 0.0,
-        exit_debit: float = 0.0,
+        exit_price: float = 0.0,
         exit_reason: str = "manual",
     ) -> Optional[PaperTrade]:
-        """Record trade exit and calculate PnL."""
+        """
+        Record trade exit and calculate PnL.
+        
+        exit_price: SIGNED (positive=credit, negative=debit)
+        """
         if trade_id not in self._trades:
             return None
         
         trade = self._trades[trade_id]
         trade.exit_timestamp = datetime.now().isoformat()
-        trade.exit_credit = exit_credit
-        trade.exit_debit = exit_debit
+        trade.exit_price = exit_price
         trade.exit_reason = exit_reason
         trade.status = "closed"
         
         # Calculate PnL
-        # For credit spread: PnL = entry_credit - exit_debit
-        # For debit spread: PnL = exit_credit - entry_debit
-        if trade.entry_credit > 0:
-            # Credit spread
-            trade.realized_pnl = (trade.entry_credit - trade.exit_debit) * 100  # Per contract
-        else:
-            # Debit spread
-            trade.realized_pnl = (trade.exit_credit - trade.entry_debit) * 100
+        # PnL = entry_price - exit_price (both signed)
+        # Credit spread: entry_price=+0.50, exit_price=-0.10 → PnL = 0.50 - (-0.10) = 0.60
+        # Debit spread: entry_price=-1.00, exit_price=+1.50 → PnL = -1.00 - 1.50 = 0.50
+        trade.realized_pnl = (trade.entry_price - trade.exit_price) * 100  # Per contract
         
         # PnL as percentage of max risk
-        max_risk = trade.spread_width * 100 - abs(trade.entry_credit - trade.entry_debit) * 100
-        if max_risk > 0:
-            trade.realized_pnl_pct = trade.realized_pnl / max_risk * 100
+        if trade.max_loss_dollars > 0:
+            trade.realized_pnl_pct = (trade.realized_pnl / trade.max_loss_dollars) * 100
         
         self._append(trade)
         return trade
@@ -230,41 +246,53 @@ class Blotter:
         }
 
 
-def create_trade_from_candidate(
-    candidate: dict,
+def create_trade_from_ibkr_order(
+    symbol: str,
+    spread_type: str,
     entry_price: float,
-    spread_type: str = "credit",
+    legs: List[Dict[str, Any]],
+    ibkr_order_id: int,
+    ibkr_perm_id: Optional[int] = None,
+    edge_type: str = "",
+    edge_percentile: float = 0.0,
+    regime: str = "",
+    structure: str = "",
+    spread_width: float = 0.0,
+    dte: int = 0,
+    spot_price: float = 0.0,
+    diagnostics: Optional[Dict[str, Any]] = None,
 ) -> PaperTrade:
     """
-    Create a PaperTrade from an engine candidate.
+    Create a PaperTrade from an IBKR order submission.
     
-    Args:
-        candidate: Engine trade candidate dict
-        entry_price: Net credit/debit at entry
-        spread_type: "credit" or "debit"
+    Called only when transmit=True succeeds.
+    
+    entry_price: SIGNED (positive=credit, negative=debit)
     """
     trade = PaperTrade(
-        symbol=candidate.get("symbol", ""),
-        edge_type=candidate.get("edge_type", ""),
-        edge_percentile=candidate.get("edge_percentile", 0),
-        regime=candidate.get("regime", ""),
-        structure=candidate.get("structure", ""),
-        spread_width=candidate.get("width", 0),
-        dte=candidate.get("dte", 0),
-        spot_price=candidate.get("spot", 0),
+        symbol=symbol,
+        edge_type=edge_type,
+        edge_percentile=edge_percentile,
+        regime=regime,
+        structure=structure,
+        spread_type=spread_type,
+        spread_width=spread_width,
+        dte=dte,
+        spot_price=spot_price,
+        legs=legs,
+        entry_price=entry_price,
+        ibkr_order_id=ibkr_order_id,
+        ibkr_perm_id=ibkr_perm_id,
+        diagnostics=diagnostics or {},
     )
     
+    # Calculate max profit/loss
     if spread_type == "credit":
-        trade.entry_credit = entry_price
+        trade.max_profit_dollars = abs(entry_price) * 100
+        trade.max_loss_dollars = (spread_width - abs(entry_price)) * 100
     else:
-        trade.entry_debit = entry_price
-    
-    # Copy diagnostics
-    trade.diagnostics = {
-        "delta_proxy_used": candidate.get("delta_proxy_used", False),
-        "strike_distance": candidate.get("strike_distance", 0),
-        "skew_value": candidate.get("skew_value", 0),
-    }
+        trade.max_profit_dollars = (spread_width - abs(entry_price)) * 100
+        trade.max_loss_dollars = abs(entry_price) * 100
     
     return trade
 

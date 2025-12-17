@@ -54,7 +54,7 @@ from execution.blotter import (
     TradeLeg,
     Blotter,
     get_blotter,
-    create_trade_from_candidate,
+    create_trade_from_ibkr_order,
 )
 
 
@@ -90,6 +90,6 @@ __all__ = [
     'TradeLeg',
     'Blotter',
     'get_blotter',
-    'create_trade_from_candidate',
+    'create_trade_from_ibkr_order',
 ]
 
