@@ -1,4 +1,0 @@
-{"timestamp": "2025-12-16T16:11:17.437158", "level": "WARNING", "event": "provider_init_failed", "data": {"error": "Polygon API key not provided"}}
-{"timestamp": "2025-12-16T16:11:17.438389", "level": "ERROR", "event": "no_provider_configured"}
-{"timestamp": "2025-12-16T16:11:17.438435", "level": "INFO", "event": "daily_run_started", "data": {"date": "2025-12-16"}}
-{"timestamp": "2025-12-16T16:11:17.438592", "level": "INFO", "event": "daily_run_completed", "data": {"edges_found": 0, "candidates_generated": 0}}
