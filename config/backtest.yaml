@@ -1,5 +1,5 @@
-# Backtest Configuration v4
-# Research-correct: width cascade, mean-reversion gating, proper exits
+# Backtest Configuration v6 - PRODUCTION FROZEN 2025-12-20
+# FLAT v1.0 - Single source of truth
 
 # ============================================================
 # SLIPPAGE & COMMISSIONS
@@ -14,74 +14,143 @@ commissions:
   reg_fee_per_contract: 0.02
 
 # ============================================================
-# STRATEGY TOGGLES
+# STRATEGY: SKEW EXTREME
 # ============================================================
+# STEEP = is_steep=1, credit PUT spread
+# FLAT = is_flat=1, debit CALL spread
 
 strategies:
   skew_extreme:
-    enable_credit_spread: true
-    enable_debit_spread: false  # Disabled until proven
-    enabled_symbols: ["SPY", "QQQ", "IWM"]
-    disabled_symbols: ["TLT"]
+    enable_credit_spread: true   # STEEP
+    enable_debit_spread: true    # FLAT
+    
+    # ============================================================
+    # PRODUCTION UNIVERSE (17+1 symbols) - LOCKED
+    # ============================================================
+    # Tier-1 (17): Statistically validated, regime-filter compatible
+    # Tier-1.5 (1): XLV only - defensive sector, mean-reverting skew
+    #
+    # DO NOT ADD: SMH, SOXX, XLB, TIP, IJR, IWF, IWB, IWD, IWP
+    # Reason: Negative expectancy under IVp≤75 gate
+    enabled_symbols: ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLI", "XLY", "XLP", "XLU", "TLT", "IEF", "GLD", "SLV", "USO", "EEM", "XLV"]
+    disabled_symbols: []
+    
+    # Signal thresholds
     min_strength: 0.50
     
-    # Credit quality gate (reject steamroller trades)
-    min_credit_to_width: 0.20   # Credit must be >= 20% of width
+    # Credit quality gate
+    min_credit_to_width: 0.20
     
     # Mean-reversion gating
     require_skew_reverting: true
-    skew_delta_window: 5        # 5-day lookback
-    min_delta: 0.005            # 0.5 vol point minimum move (was 0.01)
-    min_percentile_change: 10   # OR 10 percentile points
-    
-    # Regime filter
-    blocked_regimes: ["HIGH_VOL_PANIC", "TREND_DOWN"]
-    
-    # Position limits
-    max_positions_per_symbol: 1
-    cooldown_after_sl_days: 10  # Pause after stop-loss
-    
-    # Cooldown after loss (legacy)
-    loss_cooldown_days: 5
+    skew_delta_window: 5
+    min_delta: 0.005
+    min_percentile_change: 10
+
+# ============================================================
+# REGIME GATE - Config-driven (mandatory for FLAT)
+# ============================================================
+
+regime_gate:
+  flat:
+    max_atm_iv_pctl: 75   # Optimal from IV sweep (PF 2.15)
+  steep:
+    max_atm_iv_pctl: null  # Not yet validated
+
+# ============================================================
+# FLAT v1.0 DOCUMENTATION
+# ============================================================
+# LOCKED 2025-12-20
+#
+# Performance (17 Tier-1 symbols, IVp≤75):
+#   22 trades, 77% WR, PF 2+, Max DD 4.4%
+#
+# Regime Bands:
+#   🟢 IVp ≤ 75: Trade (aggressive)
+#   🟡 75 < IVp ≤ 80: Cautious
+#   🔴 IVp > 80: Do not trade
+
+# ============================================================
+# PHASE PRESETS
+# ============================================================
+
+phases:
+  phase1:
+    description: "Edge Existence Validation"
+    portfolio_mode: signal_quality
+    min_credit_to_width: 0.15
+    risk_engine_enabled: false
+  
+  phase2:
+    description: "Tradeability"
+    portfolio_mode: portfolio_safe
+    min_credit_to_width: 0.20
+    risk_engine_enabled: true
+  
+  phase3:
+    description: "Optimization"
+    portfolio_mode: portfolio_safe
+    min_credit_to_width: 0.20
+    risk_engine_enabled: true
+
+# ============================================================
+# RISK ENGINE
+# ============================================================
+
+risk_engine:
+  # Equity-based sizing (default for production)
+  initial_equity: 25000        # $25k account → 2% = $500/trade
+  risk_per_trade_pct: 0.02     # 2% risk per trade
+  risk_per_trade_usd: 500      # Fallback if pct is null
+  max_total_risk_pct: 0.06     # 6% total portfolio risk (3 × 2%)
+  max_total_risk_usd: 1500     # Fallback if pct is null
+  max_open_positions: 3
+  
+  clusters:
+    equity_etf: [SPY, QQQ, IWM]
+  max_cluster_risk_usd: 1000
+  max_cluster_positions: 2     # Tested: 3 adds 0 trades (dedup is the bottleneck)
+  cluster_dedup_mode: best_edge
+  cluster_risk_multiplier: 0.5
+  
+  dd_kill_pct: 0.10
+  symbol_cooldown_after_sl_days: 10
+  cluster_cooldown_after_sl_days: 5
 
 # ============================================================
 # WIDTH SELECTION
 # ============================================================
 
 width_selection:
-  # Must be multiples of 5 for SPY/QQQ/IWM strike increments
   cascade: [5, 10]
-  
-  # Risk cap per trade (max loss in dollars)
-  max_risk_per_trade: 500  # $5 width = ~$500 max
-  
-  # Liquidity requirements
+  max_risk_per_trade: 500
   min_volume: 10
   min_open_interest: 100
   max_bid_ask_pct: 10.0
 
 # ============================================================
-# EXIT RULES - PRIORITY ORDER
+# EXIT RULES - SINGLE SOURCE
 # ============================================================
 
 exit_rules:
   credit_spread:
-    # Exit priority: TP > SL > time_stop
-    take_profit_pct: 50       # 50% of credit captured
-    stop_loss_mult: 1.25      # 1.25x credit (tightened from 1.5)
-    time_stop_dte: 7          # Secondary, after TP/SL checked
-    
+    take_profit_pct: null
+    stop_loss_mult: null
+    time_stop_dte: 7
+
   debit_spread:
-    take_profit_pct: 50
-    stop_loss_pct: 50
-    time_stop_dte: 10
+    take_profit_pct: 70
+    stop_loss_pct: null
+    time_stop_dte: 7
+    early_exit:
+      enabled: false
 
 # ============================================================
-# EXECUTION MODEL
+# EXECUTION
 # ============================================================
 
 execution:
-  next_day_execution: true    # Signal day N, execute day N+1
+  next_day_execution: true
   fill_model: "close_plus_slippage"
 
 # ============================================================
@@ -90,13 +159,23 @@ execution:
 
 defaults:
   lookback_days: 90
-  min_edge_strength: 0.50
   trade_only: true
-  symbols: ["SPY", "QQQ", "IWM"]
+  symbols: ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLI", "XLY", "XLP", "XLU", "TLT", "IEF", "GLD", "SLV", "USO", "EEM", "XLV"]
 
 # ============================================================
-# V4 OUTPUT DIRECTORY
+# VALIDATION
 # ============================================================
 
-output:
-  reports_dir: "./logs/backfill/v4/reports"
+validation:
+  min_coverage: 0.90
+  fail_on_low_coverage: true
+  max_fallback_strike_distance_points: 5
+  max_fallback_trade_ratio: 0.25
+  allow_fallback_strikes: true
+
+# ============================================================
+# DATA SOURCE
+# ============================================================
+
+data:
+  options_history_provider: flatfiles

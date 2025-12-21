@@ -2068,15 +2068,52 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline", "🔬 Backtest"],
+            ["📈 Dashboard", "🎯 Edge Portfolio", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline", "🔬 Backtest"],
             label_visibility="collapsed"
         )
         
+        # If on Edge Portfolio, show edge sub-navigation
+        if page == "🎯 Edge Portfolio":
+            st.markdown("---")
+            st.markdown("**Select Edge:**")
+            try:
+                from ui.edge_registry import get_edge_registry
+                registry = get_edge_registry()
+                edges = registry.discover_edges()
+                
+                if edges:
+                    edge_options = ["📊 All Edges"] + [f"📈 {e.edge_id.upper()}" for e in edges]
+                    edge_selection = st.radio("", edge_options, label_visibility="collapsed", key="edge_nav")
+                    st.session_state['selected_edge'] = edge_selection
+            except Exception as e:
+                st.warning(f"Could not load edges: {e}")
+        
         st.markdown("---")
-        st.caption(f"v2.4 • {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"v2.5 • {datetime.now().strftime('%H:%M:%S')}")
     
     # ROUTE TO PAGE
-    if page == "📊 Blotter":
+    if page == "🎯 Edge Portfolio":
+        try:
+            from ui.edge_registry import get_edge_registry
+            from ui.edge_components import render_portfolio_page, render_edge_detail_page
+            
+            registry = get_edge_registry()
+            edge_selection = st.session_state.get('selected_edge', "📊 All Edges")
+            
+            if edge_selection == "📊 All Edges":
+                render_portfolio_page(registry)
+            else:
+                # Extract edge_id from "📈 FLAT" -> "flat"
+                edge_id = edge_selection.split(" ", 1)[1].lower()
+                edge = registry.get_edge(edge_id)
+                if edge:
+                    render_edge_detail_page(edge)
+                else:
+                    st.error(f"Edge not found: {edge_id}")
+        except ImportError as e:
+            st.error(f"Edge components not available: {e}")
+        return
+    elif page == "📊 Blotter":
         render_blotter_tab()
         return
     elif page == "📜 Edge History":

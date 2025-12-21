@@ -69,6 +69,9 @@ class BacktestTrade:
     # Legs detail (for audit)
     legs: List[Dict[str, Any]] = field(default_factory=list)
     
+    # Edge diagnostics (Phase 1 - forward-looking analysis)
+    diagnostics: Dict[str, Any] = field(default_factory=dict)
+    
     # Data source
     data_source: str = "polygon"  # "polygon" or "ibkr"
     
@@ -105,6 +108,7 @@ class BacktestTrade:
             'hold_days': self.hold_days,
             'contracts': self.contracts,
             'legs': self.legs,
+            'diagnostics': self.diagnostics,
             'data_source': self.data_source,
         }
 

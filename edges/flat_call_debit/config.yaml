@@ -1,0 +1,144 @@
+# FLAT Call Debit Edge Module Configuration
+# Edge Module #2 - Validated 2025-12-19
+
+# ============================================================
+# MODULE STATUS: FROZEN (do not modify signal logic)
+# ============================================================
+
+module:
+  name: "FLAT Call Debit"
+  version: "1.0.0"
+  edge_number: 2
+  status: "validated"
+  frozen: true
+
+# ============================================================
+# RESEARCH VALIDATION METRICS
+# ============================================================
+
+validation:
+  research_date: "2025-12-19"
+  signals_tested: 111
+  coverage_pct: 100.0
+  
+  metrics:
+    profit_factor: 4.82
+    expectancy_usd: 155.92
+    win_rate_pct: 67.6
+    max_drawdown_usd: 611.40
+    tail_ratio: 2.24
+  
+  by_year:
+    2022:
+      trades: 18
+      expectancy: 103.79
+      win_rate: 55.6
+    2023:
+      trades: 65
+      expectancy: 186.00
+      win_rate: 73.8
+    2024:
+      trades: 28
+      expectancy: 119.61
+      win_rate: 60.7
+  
+  audits_passed:
+    - debit_spread_invariants
+    - fill_model_parity
+    - call_debit_construction
+    - symbol_breakdown
+
+# ============================================================
+# SIGNAL DETECTION (FROZEN)
+# ============================================================
+
+detection:
+  # FLAT signal criteria (from skew_extremes.py)
+  # - is_flat == 1.0 OR direction == LONG
+  # - Skew percentile <= 10th
+  edge_type: "skew_extreme"
+  direction: "LONG"
+  
+  min_strength: 0.40
+  
+  # Mean-reversion not required (FLAT is continuation, not reversal)
+  require_reverting: false
+
+# ============================================================
+# ENABLED SYMBOLS
+# ============================================================
+
+symbols:
+  enabled:
+    - SPY
+    - QQQ
+    - IWM
+    - XLF
+    - GLD
+    - TLT
+    - DIA
+  
+  excluded:
+    - EEM  # Strike increment mismatch ($2.50 vs $5.00)
+  
+  # Strike increment map (for width normalization)
+  strike_increments:
+    SPY: 1.0
+    QQQ: 1.0
+    IWM: 1.0
+    XLF: 0.5
+    GLD: 1.0
+    TLT: 1.0
+    DIA: 1.0
+    EEM: 0.5  # Excluded
+
+# ============================================================
+# STRUCTURE PARAMETERS
+# ============================================================
+
+structure:
+  type: "call_debit_spread"
+  
+  # Width (compute from legs, not structure['width'])
+  default_width: 5.0
+  width_source: "computed"  # Always use abs(short_strike - long_strike)
+  
+  # DTE targeting
+  min_dte: 21
+  max_dte: 45
+  
+  # Leg construction
+  # Long call at ATM, short call at ATM + width
+  long_strike: "atm"
+  short_strike: "atm + width"
+
+# ============================================================
+# EXIT RULES
+# ============================================================
+
+exit_rules:
+  # Optimal from ablation: 14-day hold
+  holding_period_days: 14
+  
+  take_profit_pct: 80.0    # Exit at 80% of max profit
+  stop_loss_pct: 50.0      # Exit at 50% of max loss
+  time_stop_dte: 7         # Exit at 7 DTE regardless
+
+# ============================================================
+# INTEGRATION NOTES
+# ============================================================
+
+integration:
+  # This module runs ALONGSIDE Edge Module #1 (STEEP credit spreads)
+  # No conflict - FLAT and STEEP are mutually exclusive signals
+  
+  dashboard_location: "Edge Module #2"
+  config_section: "strategies.flat_call_debit"
+  
+  # To enable in production, add to config/backtest.yaml:
+  #
+  # strategies:
+  #   flat_call_debit:
+  #     enabled: true
+  #     enabled_symbols: [SPY, QQQ, IWM, XLF, GLD, TLT, DIA]
+  #     min_strength: 0.40

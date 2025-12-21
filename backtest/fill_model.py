@@ -232,11 +232,26 @@ def calculate_strict_entry_fill(
     
     net_premium = short_credit - long_debit
     
-    # Check if trade is executable (net credit for credit spreads)
+    # Determine if this is a credit or debit structure from the computed cashflow.
+    # net_premium > 0 => credit; net_premium < 0 => debit
     unexecutable = False
-    if short_credit > 0 and net_premium <= 0:
-        # Credit spread that nets zero or negative - not executable
+    
+    # Basic sanity checks: must have at least one buy and one sell leg
+    has_sell = any(side == 'SELL' for side in leg_sides.values())
+    has_buy = any(side != 'SELL' for side in leg_sides.values())
+    if not (has_sell and has_buy):
         unexecutable = True
+    
+    # Credit spread: must produce positive credit
+    if net_premium >= 0:
+        # Net credit must be strictly positive to be executable
+        if net_premium <= 0:
+            unexecutable = True
+    else:
+        # Debit spread: must produce a strictly positive debit (i.e., pay something)
+        debit = -net_premium
+        if debit <= 0:
+            unexecutable = True
     
     num_legs = len(leg_closes)
     commissions = max(num_legs * config.commission_per_contract, config.min_commission)

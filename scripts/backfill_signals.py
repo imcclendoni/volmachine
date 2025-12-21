@@ -26,6 +26,14 @@ import requests
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from data.option_bar_store import OptionBarStore
+
+# Flat file cache directory
+FLATFILE_CACHE = Path("cache/flatfiles")
+
+# Global bar store (initialized in main())
+BAR_STORE: Optional[OptionBarStore] = None
+
 
 # ============================================================
 # LOAD CONFIG
@@ -53,13 +61,22 @@ PERCENTILE_EXTREME_HIGH = 90
 PERCENTILE_EXTREME_LOW = 10
 TARGET_DTE = 30
 DTE_TOLERANCE = 15
-MIN_HISTORY_FOR_PERCENTILE = 20
+MIN_HISTORY_FOR_PERCENTILE = 60
 
 # Mean-reversion gating
 SKEW_DELTA_WINDOW = SKEW_CONFIG.get('skew_delta_window', 5)
-MIN_DELTA = SKEW_CONFIG.get('min_delta', 0.01)
+MIN_DELTA = SKEW_CONFIG.get('min_delta', 0.005)  # 0.5 vol points default
 MIN_PERCENTILE_CHANGE = SKEW_CONFIG.get('min_percentile_change', 10)
 REQUIRE_SKEW_REVERTING = SKEW_CONFIG.get('require_skew_reverting', True)
+
+# Valid rejection reasons (enum-like)
+VALID_REJECTION_REASONS = {
+    'insufficient_history',
+    'not_extreme', 
+    'skew_not_reverting',
+    'delta_too_small',
+    'passed',
+}
 
 # Width cascade
 WIDTH_CASCADE = WIDTH_CONFIG.get('cascade', [1, 2, 3, 5])
@@ -70,6 +87,41 @@ BLOCKED_REGIMES = SKEW_CONFIG.get('blocked_regimes', ['HIGH_VOL_PANIC', 'TREND_D
 
 # Cooldown
 LOSS_COOLDOWN_DAYS = SKEW_CONFIG.get('loss_cooldown_days', 5)
+
+# Per-symbol strike increment (default $5 for SPY/QQQ/IWM)
+# Full 21-symbol universe with correct increments
+STRIKE_INCREMENT = {
+    # US Broad
+    'SPY': 5.0,
+    'QQQ': 5.0,
+    'IWM': 1.0,
+    'DIA': 1.0,
+    # Sectors
+    'XLF': 1.0,
+    'XLE': 1.0,
+    'XLK': 1.0,
+    'XLI': 1.0,
+    'XLY': 1.0,
+    'XLP': 1.0,
+    'XLU': 1.0,
+    # Rates
+    'TLT': 1.0,
+    'IEF': 0.5,
+    'HYG': 0.5,
+    'LQD': 0.5,
+    # Commodities
+    'GLD': 1.0,
+    'SLV': 0.5,
+    'USO': 0.5,
+    'UUP': 0.5,
+    # Intl
+    'EEM': 0.5,
+    'EFA': 1.0,
+}
+
+def get_strike_increment(symbol: str) -> float:
+    """Get strike increment for a symbol (default $5 for unknown)."""
+    return STRIKE_INCREMENT.get(symbol, 5.0)
 
 
 # ============================================================
@@ -91,9 +143,34 @@ def get_polygon_api_key() -> str:
 
 
 def get_underlying_price(symbol: str, as_of_date: date, api_key: str) -> Optional[float]:
-    """Get underlying close price for a specific date."""
+    """Get underlying close price for a specific date.
+    
+    IMPORTANT: Uses UNADJUSTED prices to match OPRA option strike coordinates.
+    Split-adjusted prices would mismatch with unadjusted option strikes.
+    
+    Priority:
+    1. Local OHLCV cache (cache/ohlcv/{symbol}_daily.json)
+    2. REST API fallback
+    """
+    # Try local cache first
+    cache_path = Path(__file__).parent.parent / 'cache' / 'ohlcv' / f'{symbol}_daily.json'
+    if cache_path.exists():
+        try:
+            with open(cache_path) as f:
+                data = json.load(f)
+                bars = data.get('bars', [])
+                date_str = as_of_date.isoformat()
+                for bar in bars:
+                    # Polygon uses milliseconds timestamp
+                    bar_date = datetime.fromtimestamp(bar['t'] / 1000).date().isoformat()
+                    if bar_date == date_str:
+                        return bar.get('c')
+        except:
+            pass
+    
+    # REST fallback - use UNADJUSTED prices to match OPRA strikes
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{as_of_date.isoformat()}/{as_of_date.isoformat()}"
-    params = {'apiKey': api_key, 'adjusted': 'true'}
+    params = {'apiKey': api_key, 'adjusted': 'false'}
     
     try:
         response = requests.get(url, params=params, timeout=30)
@@ -107,10 +184,32 @@ def get_underlying_price(symbol: str, as_of_date: date, api_key: str) -> Optiona
 
 
 def get_option_data(occ: str, target_date: date, api_key: str) -> Optional[Dict]:
-    """Get option bar data for a specific date."""
+    """
+    Get option bar data for a specific date.
+    
+    Priority:
+    1. Flat file store (global BAR_STORE if available)
+    2. REST API fallback (only for recent days)
+    """
+    global BAR_STORE
     ticker = f"O:{occ.replace(' ', '')}"
+    
+    # Try flat file store first (for historical data)
+    if BAR_STORE is not None:
+        bar = BAR_STORE.get_bar(target_date, ticker)
+        if bar:
+            return bar
+    
+    # Check if date is recent (within 5 days) - use REST for fresh data
+    days_ago = (date.today() - target_date).days
+    
+    # For historical data (>5 days), if no flat file, return None (don't hit REST)
+    if BAR_STORE is not None and days_ago > 5:
+        return None  # Flat file should have it; if missing, treat as no data
+    
+    # REST fallback for recent days only
     url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{target_date.isoformat()}/{target_date.isoformat()}"
-    params = {'apiKey': api_key, 'adjusted': 'true'}
+    params = {'apiKey': api_key, 'adjusted': 'false'}  # UNADJUSTED to match OPRA
     
     try:
         response = requests.get(url, params=params, timeout=30)
@@ -211,10 +310,10 @@ def implied_volatility(
 # STRIKE SELECTION
 # ============================================================
 
-def find_25_delta_strikes(spot: float, dte: int, atm_iv: float) -> Tuple[float, float]:
-    """Approximate 25-delta put and call strikes."""
+def find_25_delta_strikes(spot: float, dte: int, atm_iv: float, increment: float = 5.0) -> Tuple[float, float]:
+    """Approximate 25-delta put and call strikes using per-symbol increment."""
     if atm_iv <= 0 or dte <= 0:
-        return (round(spot * 0.95 / 5) * 5, round(spot * 1.05 / 5) * 5)
+        return (round(spot * 0.95 / increment) * increment, round(spot * 1.05 / increment) * increment)
     
     T = dte / 365
     std_move = spot * atm_iv * math.sqrt(T)
@@ -222,8 +321,8 @@ def find_25_delta_strikes(spot: float, dte: int, atm_iv: float) -> Tuple[float, 
     put_strike = spot - 0.67 * std_move
     call_strike = spot + 0.67 * std_move
     
-    put_strike = round(put_strike / 5) * 5
-    call_strike = round(call_strike / 5) * 5
+    put_strike = round(put_strike / increment) * increment
+    call_strike = round(call_strike / increment) * increment
     
     return (put_strike, call_strike)
 
@@ -255,6 +354,48 @@ def build_occ_symbol(symbol: str, expiry: date, strike: float, right: str) -> st
     return f"{symbol.ljust(6)}{exp_str}{right}{strike_int:08d}"
 
 
+def find_strike_with_fallback(symbol: str, expiry: date, base_strike: float, right: str,
+                               as_of_date: date, api_key: str, delay: float = 0.2,
+                               max_steps: int = 10, step_size: float = None) -> Tuple[Optional[Dict], float, bool]:
+    """
+    Try to find option data at base_strike, then search ±1 to ±max_steps.
+    
+    Returns: (option_data, actual_strike, used_fallback)
+    """
+    # Use per-symbol increment if step_size not explicitly provided
+    if step_size is None:
+        step_size = get_strike_increment(symbol)
+    # Try primary strike first
+    occ = build_occ_symbol(symbol, expiry, base_strike, right)
+    data = get_option_data(occ, as_of_date, api_key)
+    if data and data.get('close', 0) > 0:
+        return data, base_strike, False
+    
+    time.sleep(delay)
+    
+    # Try fallback ladder: ±1, ±2, ... ±max_steps
+    for step in range(1, max_steps + 1):
+        # For puts, search lower first; for calls, search higher first
+        if right == 'P':
+            offsets = [-step * step_size, step * step_size]  # Lower, then higher
+        else:  # C
+            offsets = [step * step_size, -step * step_size]  # Higher, then lower
+        
+        for offset in offsets:
+            try_strike = base_strike + offset
+            if try_strike <= 0:
+                continue
+            
+            occ = build_occ_symbol(symbol, expiry, try_strike, right)
+            data = get_option_data(occ, as_of_date, api_key)
+            time.sleep(delay * 0.5)  # Shorter delay for fallback searches
+            
+            if data and data.get('close', 0) > 0:
+                return data, try_strike, True
+    
+    return None, base_strike, False
+
+
 # ============================================================
 # SKEW CALCULATION
 # ============================================================
@@ -267,8 +408,15 @@ def calculate_skew_metrics(
     delay: float = 0.2,
 ) -> tuple:
     """Calculate skew metrics matching live engine output. Returns (metrics, status)."""
-    expiry = find_monthly_expiry(as_of_date, TARGET_DTE, DTE_TOLERANCE)
-    dte = (expiry - as_of_date).days
+    
+    # Chain-driven expiry selection: use available expiries from flat file
+    # Checks that expiry is USABLE (has valid ATM call+put pair)
+    expiry, dte = BAR_STORE.find_best_expiry(
+        as_of_date, symbol, TARGET_DTE, DTE_TOLERANCE, spot=underlying_price
+    )
+    
+    if expiry is None:
+        return None, "no_available_expiry"
     
     if dte < 7:
         return None, "dte_too_low"
@@ -276,20 +424,34 @@ def calculate_skew_metrics(
     T = dte / 365
     r = 0.05
     
-    atm_strike = round(underlying_price / 5) * 5
-    atm_call_occ = build_occ_symbol(symbol, expiry, atm_strike, 'C')
-    atm_put_occ = build_occ_symbol(symbol, expiry, atm_strike, 'P')
+    # Chain-driven ATM selection: find strike with both call+put having data
+    actual_atm_strike, atm_call_data, atm_put_data = BAR_STORE.find_atm_strike(
+        as_of_date, symbol, expiry, underlying_price
+    )
     
-    atm_call_data = get_option_data(atm_call_occ, as_of_date, api_key)
-    time.sleep(delay)
-    atm_put_data = get_option_data(atm_put_occ, as_of_date, api_key)
-    time.sleep(delay)
-    
-    if not atm_call_data or not atm_put_data:
+    if actual_atm_strike is None:
+        # Log diagnostic info
+        available_expiries = BAR_STORE.get_available_expiries(as_of_date, symbol)
+        available_strikes = BAR_STORE.get_available_strikes(as_of_date, symbol, expiry)
+        print(f"  ⚠ no_atm_bars: {symbol} {as_of_date} | underlying=${underlying_price:.2f} | "
+              f"expiry={expiry} (dte={dte}) | available_expiries={len(available_expiries)} | "
+              f"strikes_for_expiry={len(available_strikes)}")
         return None, "no_atm_bars"
     
-    atm_call_iv = implied_volatility(atm_call_data['close'], underlying_price, atm_strike, T, r, 'call')
-    atm_put_iv = implied_volatility(atm_put_data['close'], underlying_price, atm_strike, T, r, 'put')
+    # Derive increment from chain
+    increment = BAR_STORE.derive_increment(as_of_date, symbol, expiry, underlying_price)
+    base_atm_strike = round(underlying_price / increment) * increment
+    
+    # Track ATM fallback
+    used_atm_fallback = abs(actual_atm_strike - base_atm_strike) > 0.01
+    atm_fallback_distance = abs(actual_atm_strike - base_atm_strike)
+    
+    # Mark INVALID if ATM fallback distance too large (>5 * increment)
+    if atm_fallback_distance > 5:
+        return None, "atm_fallback_too_far"
+    
+    atm_call_iv = implied_volatility(atm_call_data['close'], underlying_price, actual_atm_strike, T, r, 'call')
+    atm_put_iv = implied_volatility(atm_put_data['close'], underlying_price, actual_atm_strike, T, r, 'put')
     
     if not atm_call_iv or not atm_put_iv:
         return None, "atm_iv_fail"
@@ -300,21 +462,22 @@ def calculate_skew_metrics(
     
     atm_iv = (atm_call_iv + atm_put_iv) / 2
     
-    put_25d_strike, call_25d_strike = find_25_delta_strikes(underlying_price, dte, atm_iv)
+    put_25d_strike, call_25d_strike = find_25_delta_strikes(underlying_price, dte, atm_iv, increment)
     
-    put_25d_occ = build_occ_symbol(symbol, expiry, put_25d_strike, 'P')
-    call_25d_occ = build_occ_symbol(symbol, expiry, call_25d_strike, 'C')
-    
-    put_25d_data = get_option_data(put_25d_occ, as_of_date, api_key)
-    time.sleep(delay)
-    call_25d_data = get_option_data(call_25d_occ, as_of_date, api_key)
-    time.sleep(delay)
+    # Use fallback ladder for 25-delta strikes
+    put_25d_data, actual_put_strike, put_used_fallback = find_strike_with_fallback(
+        symbol, expiry, put_25d_strike, 'P', as_of_date, api_key, delay
+    )
+    call_25d_data, actual_call_strike, call_used_fallback = find_strike_with_fallback(
+        symbol, expiry, call_25d_strike, 'C', as_of_date, api_key, delay
+    )
     
     if not put_25d_data or not call_25d_data:
         return None, "no_25d_bars"
     
-    put_iv_25d = implied_volatility(put_25d_data['close'], underlying_price, put_25d_strike, T, r, 'put')
-    call_iv_25d = implied_volatility(call_25d_data['close'], underlying_price, call_25d_strike, T, r, 'call')
+    # Use actual strikes for IV calculation
+    put_iv_25d = implied_volatility(put_25d_data['close'], underlying_price, actual_put_strike, T, r, 'put')
+    call_iv_25d = implied_volatility(call_25d_data['close'], underlying_price, actual_call_strike, T, r, 'call')
     
     if not put_iv_25d or not call_iv_25d:
         return None, "25d_iv_fail"
@@ -329,17 +492,27 @@ def calculate_skew_metrics(
     if abs(put_call_skew) < 1e-6 and abs(put_iv_25d - call_iv_25d) > 0.001:
         return None, "skew_calculation_error"
     
+    used_fallback = put_used_fallback or call_used_fallback
+    
     return {
         'put_iv_25d': put_iv_25d,
         'call_iv_25d': call_iv_25d,
         'put_call_skew': put_call_skew,
         'atm_iv': atm_iv,
-        'put_strike': put_25d_strike,
-        'call_strike': call_25d_strike,
-        'atm_strike': atm_strike,
+        'put_strike': actual_put_strike,
+        'call_strike': actual_call_strike,
+        'atm_strike': actual_atm_strike,
+        'original_atm_strike': base_atm_strike,
         'expiry': expiry,
         'dte': dte,
         'underlying_price': underlying_price,
+        # 25-delta fallback tracking
+        'used_fallback_strike': used_fallback,
+        'original_put_strike': put_25d_strike,
+        'original_call_strike': call_25d_strike,
+        # ATM fallback tracking
+        'used_atm_fallback': used_atm_fallback,
+        'atm_fallback_distance': atm_fallback_distance,
     }, "ok"
 
 
@@ -391,20 +564,25 @@ def detect_skew_edge(
         past_idx = -SKEW_DELTA_WINDOW
         pctl_delta = percentile - percentile_history[past_idx]
     
-    # Gating check - MAGNITUDE ONLY (no sign requirement for now)
-    # Goal: get non-zero signals first, then add sign gating if it improves PF
+    # Gating check - REQUIRE REVERTING CONFIRMATION (OR condition)
+    # Either raw skew or percentile must be reverting
     if REQUIRE_SKEW_REVERTING:
+        if is_steep:
+            # STEEP: require either skew falling OR pctl stopped rising
+            is_reverting = (skew_delta < 0) or (pctl_delta <= 0)
+        else:
+            # FLAT: require either skew rising OR pctl stopped falling
+            is_reverting = (skew_delta > 0) or (pctl_delta >= 0)
+        
+        if not is_reverting:
+            return None, "skew_not_reverting"
+        
+        # Then check magnitude threshold
         meets_delta_threshold = abs(skew_delta) >= MIN_DELTA
         meets_pctl_threshold = abs(pctl_delta) >= MIN_PERCENTILE_CHANGE
         
         if not (meets_delta_threshold or meets_pctl_threshold):
             return None, "delta_too_small"
-        
-        # Log the direction for analysis (but don't filter on it)
-        if is_steep:
-            is_reverting = skew_delta < 0  # Steep should be falling
-        else:
-            is_reverting = skew_delta > 0  # Flat should be rising
     
     # Calculate strength
     if is_steep:
@@ -495,25 +673,45 @@ def _try_build_spread(
     symbol: str,
     expiry: date,
     atm_strike: float,
-    width: int,
+    width: int,  # This is now interpreted as DOLLAR WIDTH (e.g., 5 = $5 wide)
     api_key: str,
     as_of_date: date,
     delay: float,
 ) -> Optional[Dict]:
     """Try to build a spread with given width, checking contract availability."""
     
+    # Get per-symbol strike increment (not hardcoded $5)
+    increment = get_strike_increment(symbol)
+    
+    # FIXED: width is now DOLLAR WIDTH, not increment count
+    # Compute how many increments we need to achieve this width
+    # For example: width=5 with increment=5 -> 1 increment apart
+    #              width=5 with increment=1 -> 5 increments apart
+    if width < increment:
+        return None  # Cannot build spread narrower than strike increment
+    
+    num_increments = int(width / increment)
+    if num_increments < 1:
+        return None
+    
+    # actual_width_dollars is what we'll actually get (might round to increment)
+    actual_width_dollars = num_increments * increment
+    
     if direction == 'SHORT':
         # Credit put spread: sell OTM put, buy further OTM
-        short_strike = atm_strike - 5
-        long_strike = short_strike - width
+        short_strike = atm_strike - increment
+        long_strike = short_strike - (num_increments * increment)
+        option_right = 'P'  # PUT for credit spread
     else:
-        # Debit put spread: buy closer to ATM, sell further OTM
-        long_strike = atm_strike - 5
-        short_strike = long_strike - width
+        # FLAT: CALL debit spread - buy call at ATM, sell call above
+        # Per EDGE_FLAT_v1.md spec: long ATM call, short ATM+width call
+        long_strike = atm_strike
+        short_strike = atm_strike + (num_increments * increment)
+        option_right = 'C'  # CALL for debit spread
     
     # Build OCC symbols
-    short_occ = build_occ_symbol(symbol, expiry, short_strike, 'P')
-    long_occ = build_occ_symbol(symbol, expiry, long_strike, 'P')
+    short_occ = build_occ_symbol(symbol, expiry, short_strike, option_right)
+    long_occ = build_occ_symbol(symbol, expiry, long_strike, option_right)
     
     # Check if contracts exist
     short_data = get_option_data(short_occ, as_of_date, api_key)
@@ -539,38 +737,42 @@ def _try_build_spread(
         if credit <= 0:
             return None  # No credit
         
-        max_loss = (width - credit) * 100
+        # FIXED: Use actual_width_dollars, not width (which is increment count)
+        max_loss = (actual_width_dollars - credit) * 100
         max_profit = credit * 100
         
         return {
             'type': 'credit_spread',
             'spread_type': 'credit',
             'legs': [
-                {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
-                {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
+                {'strike': short_strike, 'right': option_right, 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
+                {'strike': long_strike, 'right': option_right, 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
             ],
-            'width': width,
+            'width': actual_width_dollars,  # Store actual dollar width for clarity
+            'width_increments': width,       # Store original increment count
             'entry_credit': credit,
             'max_loss_dollars': max_loss,
             'max_profit_dollars': max_profit,
         }
     else:
-        # Debit spread
+        # Debit spread (CALL for FLAT)
         debit = long_price - short_price
         if debit <= 0:
             return None  # No debit
         
+        # FIXED: Use actual_width_dollars, not width
         max_loss = debit * 100
-        max_profit = (width - debit) * 100
+        max_profit = (actual_width_dollars - debit) * 100
         
         return {
-            'type': 'debit_spread',
+            'type': 'call_debit_spread',  # Correct type per spec
             'spread_type': 'debit',
             'legs': [
-                {'strike': long_strike, 'right': 'P', 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
-                {'strike': short_strike, 'right': 'P', 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
+                {'strike': long_strike, 'right': option_right, 'side': 'BUY', 'expiry': expiry.isoformat(), 'price': long_price},
+                {'strike': short_strike, 'right': option_right, 'side': 'SELL', 'expiry': expiry.isoformat(), 'price': short_price},
             ],
-            'width': width,
+            'width': actual_width_dollars,  # Store actual dollar width for clarity
+            'width_increments': width,       # Store original increment count
             'entry_debit': debit,
             'max_loss_dollars': max_loss,
             'max_profit_dollars': max_profit,
@@ -663,6 +865,45 @@ def save_skew_history(symbol: str, skew_history: List[float], percentile_history
         }, f)
 
 
+def load_iv_history(symbol: str) -> List[float]:
+    """Load historical ATM IV values for percentile calculation."""
+    cache_path = Path(__file__).parent.parent / 'cache' / 'edges' / f'{symbol}_iv_history_v4.json'
+    if cache_path.exists():
+        try:
+            with open(cache_path) as f:
+                data = json.load(f)
+                return data.get('atm_iv', [])
+        except:
+            pass
+    return []
+
+
+def save_iv_history(symbol: str, iv_history: List[float]):
+    """Save ATM IV history for regime filtering."""
+    cache_dir = Path(__file__).parent.parent / 'cache' / 'edges'
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / f'{symbol}_iv_history_v4.json'
+    with open(path, 'w') as f:
+        json.dump({
+            'atm_iv': iv_history[-252:],  # Keep 1 year of history
+        }, f)
+
+
+def compute_iv_percentile(current_iv: float, iv_history: List[float], window: int = 60) -> Optional[float]:
+    """
+    Compute ATM IV percentile using trailing window (no lookahead).
+    
+    Returns percentile (0-100) or None if insufficient history.
+    """
+    if len(iv_history) < window:
+        return None
+    
+    # Use last 'window' observations
+    recent = iv_history[-window:]
+    below = sum(1 for iv in recent if iv < current_iv)
+    return (below / len(recent)) * 100
+
+
 def get_next_trading_day(current: date) -> date:
     """Get next trading day (skip weekends)."""
     next_day = current + timedelta(days=1)
@@ -689,8 +930,27 @@ def main():
     parser.add_argument("--resume", action="store_true", default=True, help="Skip dates where all symbols already have reports")
     parser.add_argument("--no-resume", dest="resume", action="store_false", help="Process all dates even if reports exist")
     parser.add_argument("--checkpoint-every", type=int, default=25, help="Save history to cache every N days")
+    parser.add_argument("--fresh-history", action="store_true", help="Ignore cached history, start fresh (required for multi-year validation)")
+    parser.add_argument("--phase", choices=["phase1", "phase2", "phase3"], default=None,
+                        help="Phase preset: phase1=edge_validation, phase2=tradeability, phase3=optimization")
     
     args = parser.parse_args()
+    
+    # Load phase configuration if specified
+    PHASE_CONFIG = {}
+    if args.phase:
+        PHASE_CONFIG = CONFIG.get('phases', {}).get(args.phase, {})
+        phase_desc = PHASE_CONFIG.get('description', args.phase)
+        print(f"\n{'='*60}")
+        print(f"PHASE: {args.phase.upper()} - {phase_desc}")
+        print(f"{'='*60}")
+        if args.phase == 'phase1':
+            print("⚠️  RiskEngine: DISABLED (validation mode)")
+            print(f"⚠️  Credit gate: {PHASE_CONFIG.get('min_credit_to_width', 0.15)*100:.0f}% (relaxed)")
+        else:
+            print(f"✅ RiskEngine: ENABLED")
+            print(f"✅ Credit gate: {PHASE_CONFIG.get('min_credit_to_width', 0.20)*100:.0f}%")
+        print()
     
     api_key = get_polygon_api_key()
     if not api_key:
@@ -718,17 +978,27 @@ def main():
     print(f"Max risk per trade: ${MAX_RISK_PER_TRADE}")
     print(f"Output: {output_dir}")
     print(f"Mode: {'Build History' if args.build_history else 'Detect Signals'}")
+    
+    # Initialize flat file store for option bar lookups
+    global BAR_STORE
+    BAR_STORE = OptionBarStore(FLATFILE_CACHE)
+    print(f"Flat Files: {FLATFILE_CACHE}/options_aggs/")
     print()
     
     # Debug counters
     signals_found = 0
     dates_processed = 0
     candidates_extreme = 0      # pctl <= 10 or >= 90
+    rejected_insufficient_history = 0  # not enough days for percentile
+    rejected_not_extreme = 0     # pctl in 10-90 range
     rejected_by_reversion = 0   # delta sign wrong
     rejected_by_delta_threshold = 0  # delta too small
     rejected_by_width = 0        # width cascade failed
     rejected_by_credit_quality = 0  # credit too small vs width
     passed_gating = 0
+    
+    # Percentile distribution tracking (after warm-up)
+    pctl_stats = {sym: {'min': 100, 'max': 0, 'low': 0, 'high': 0, 'count': 0} for sym in args.symbols}
     
     # Data integrity counters
     iv_failures = {'no_atm_bars': 0, 'atm_iv_fail': 0, 'atm_iv_out_of_bounds': 0,
@@ -736,11 +1006,79 @@ def main():
                    'dte_too_low': 0, 'skew_calculation_error': 0, 'no_underlying': 0}
     valid_days_by_symbol = {sym: 0 for sym in args.symbols}
     
-    # Load existing history
+    # Monthly missingness heatmap: {sym: {month: {reason: count, valid: count}}}
+    missingness_by_month = {sym: {} for sym in args.symbols}
+    
+    # Coverage JSONL: logs/backfill/v4/coverage_{start}_{end}.jsonl
+    coverage_file = output_dir / f"coverage_{start_date.isoformat()}_{end_date.isoformat()}.jsonl"
+    coverage_records = []  # Will write at end
+    
+    # Candidate funnel JSONL: logs/backfill/v4/candidates_{start}_{end}.jsonl
+    candidates_file_path = output_dir / f"candidates_{start_date.isoformat()}_{end_date.isoformat()}.jsonl"
+    candidates_file = open(candidates_file_path, 'w')
+    
+    def write_candidate(dt: date, symbol: str, skew: float, percentile: float, 
+                        is_steep: bool, is_flat: bool, rejection_reason: str,
+                        edge: dict = None, structure: dict = None, 
+                        structure_fail_reason: str = None, saved: bool = False):
+        """Write candidate to funnel JSONL."""
+        row = {
+            'date': dt.isoformat(),
+            'symbol': symbol,
+            'skew': round(skew, 4),
+            'percentile': round(percentile, 1),
+            'is_steep': is_steep,
+            'is_flat': is_flat,
+            'rejection_reason': rejection_reason,
+            'structure_status': 'built' if structure else ('failed' if edge else 'not_attempted'),
+            'structure_fail_reason': structure_fail_reason,
+            'credit_to_width': round(structure.get('entry_credit', 0) / structure.get('width_selected', 5), 3) if structure and structure.get('width_selected') else None,
+            'max_loss': structure.get('max_loss_dollars') if structure else None,
+            'width_selected': structure.get('width_selected') if structure else None,
+            'skew_delta': edge.get('skew_delta') if edge else None,
+            'pctl_delta': edge.get('pctl_delta') if edge else None,
+            'saved_as_signal': saved,
+        }
+        candidates_file.write(json.dumps(row) + '\n')
+    
+    def record_coverage(symbol: str, dt: date, status: str, failure_reason: str = None, details: dict = None):
+        """Record coverage status for a symbol/day."""
+        record = {
+            'date': dt.isoformat(),
+            'symbol': symbol,
+            'status': status,  # 'VALID' or 'INVALID'
+            'failure_reason': failure_reason,
+            'details': details or {}
+        }
+        coverage_records.append(record)
+        
+        # Also track in monthly heatmap
+        month_key = dt.strftime('%Y-%m')
+        if month_key not in missingness_by_month[symbol]:
+            missingness_by_month[symbol][month_key] = {'valid': 0}
+        if status == 'VALID':
+            missingness_by_month[symbol][month_key]['valid'] = missingness_by_month[symbol][month_key].get('valid', 0) + 1
+        elif failure_reason:
+            missingness_by_month[symbol][month_key][failure_reason] = missingness_by_month[symbol][month_key].get(failure_reason, 0) + 1
+    
+    # Load existing history (or start fresh for multi-year validation)
     histories = {}
+    iv_histories = {}  # ATM IV history for regime filtering
     for sym in args.symbols:
-        skew, pctl = load_skew_history(sym)
-        histories[sym] = {'skew': skew, 'percentile': pctl}
+        if args.fresh_history:
+            # Start with empty history - required for uncontaminated multi-year validation
+            histories[sym] = {'skew': [], 'percentile': []}
+            iv_histories[sym] = []
+        else:
+            skew, pctl = load_skew_history(sym)
+            histories[sym] = {'skew': skew, 'percentile': pctl}
+            iv_histories[sym] = load_iv_history(sym)
+            if skew:
+                print(f"  ⚠️  Loaded cached history for {sym}: {len(skew)} skew days, {len(iv_histories[sym])} IV days")
+    
+    if args.fresh_history:
+        print("  → Fresh history mode: building from scratch (no cache contamination)")
+    print()
     
     current = start_date
     checkpoint_counter = 0
@@ -748,6 +1086,11 @@ def main():
     
     while current <= end_date:
         if current.weekday() >= 5:
+            current += timedelta(days=1)
+            continue
+        
+        # Skip market holidays: only process days with actual flat file data
+        if not BAR_STORE.has_date(current):
             current += timedelta(days=1)
             continue
         
@@ -769,23 +1112,54 @@ def main():
         checkpoint_counter += 1
         print(f"Processing {current}...", end=" ", flush=True)
         
+        # Load all options for this day (O(1) lookups for rest of day)
+        BAR_STORE.load_day(current)
+        
         day_signals = []
         
         for symbol in args.symbols:
             underlying = get_underlying_price(symbol, current, api_key)
             if not underlying:
                 iv_failures['no_underlying'] += 1
+                record_coverage(symbol, current, 'INVALID', 'no_underlying')
                 continue
             
             metrics, status = calculate_skew_metrics(symbol, current, underlying, api_key, args.delay)
             
             if status != "ok":
                 iv_failures[status] = iv_failures.get(status, 0) + 1
+                record_coverage(symbol, current, 'INVALID', status)
                 continue
             
-            # Data is valid - record to history
+            # Validate skew is sane (not NaN, not extreme)
+            skew_val = metrics.get('put_call_skew', 0)
+            if not (isinstance(skew_val, (int, float)) and abs(skew_val) < 1.0):
+                iv_failures['skew_calculation_error'] = iv_failures.get('skew_calculation_error', 0) + 1
+                record_coverage(symbol, current, 'INVALID', 'skew_out_of_bounds', {'skew': skew_val})
+                continue
+            
+            # Data is valid - record to history and coverage
             valid_days_by_symbol[symbol] += 1
+            coverage_details = {
+                'skew': skew_val,
+                'used_fallback_strike': metrics.get('used_fallback_strike', False),
+            }
+            if metrics.get('used_fallback_strike'):
+                coverage_details['original_put_strike'] = metrics.get('original_put_strike')
+                coverage_details['actual_put_strike'] = metrics.get('put_strike')
+                coverage_details['original_call_strike'] = metrics.get('original_call_strike')
+                coverage_details['actual_call_strike'] = metrics.get('call_strike')
+            record_coverage(symbol, current, 'VALID', None, coverage_details)
             histories[symbol]['skew'].append(metrics['put_call_skew'])
+            
+            # Track ATM IV history for regime filtering
+            atm_iv = metrics.get('atm_iv', 0)
+            iv_histories[symbol].append(atm_iv)
+            
+            # Compute ATM IV percentile (trailing, no lookahead)
+            iv_hist_before_today = iv_histories[symbol][:-1]
+            current_iv_pctl = compute_iv_percentile(atm_iv, iv_hist_before_today, window=60)
+            metrics['atm_iv_percentile'] = current_iv_pctl  # None if insufficient history
             
             # Calculate current percentile on-the-fly (don't persist separately)
             skew_hist = histories[symbol]['skew'][:-1]
@@ -793,18 +1167,32 @@ def main():
                 below = sum(1 for s in skew_hist if s < metrics['put_call_skew'])
                 current_pctl = (below / len(skew_hist)) * 100
                 histories[symbol]['percentile'].append(current_pctl)
+                
+                # Track percentile distribution (after warm-up)
+                pctl_stats[symbol]['count'] += 1
+                pctl_stats[symbol]['min'] = min(pctl_stats[symbol]['min'], current_pctl)
+                pctl_stats[symbol]['max'] = max(pctl_stats[symbol]['max'], current_pctl)
+                if current_pctl <= PERCENTILE_EXTREME_LOW:
+                    pctl_stats[symbol]['low'] += 1
+                if current_pctl >= PERCENTILE_EXTREME_HIGH:
+                    pctl_stats[symbol]['high'] += 1
             
             if not args.build_history:
                 edge, rejection = detect_skew_edge(
                     metrics,
-                    histories[symbol]['skew'][:-1],
-                    histories[symbol]['percentile'],
+                    histories[symbol]['skew'][:-1],        # History before today
+                    histories[symbol]['percentile'][:-1],  # History before today (aligned)
                 )
                 
+                # Debug assertion: rejection must be a valid key
+                assert rejection in VALID_REJECTION_REASONS, f"Invalid rejection: {rejection}"
+                
                 # Track rejection reasons
-                if rejection == "not_extreme":
-                    pass  # Normal, most days aren't extreme
-                elif rejection == "wrong_sign":
+                if rejection == "insufficient_history":
+                    rejected_insufficient_history += 1
+                elif rejection == "not_extreme":
+                    rejected_not_extreme += 1
+                elif rejection == "skew_not_reverting":
                     rejected_by_reversion += 1
                     candidates_extreme += 1
                 elif rejection == "delta_too_small":
@@ -814,27 +1202,44 @@ def main():
                     candidates_extreme += 1
                 
                 if edge and edge['strength'] >= 0.5:
+                    # Inject ATM IV percentile into edge metrics (for regime filtering)
+                    if current_iv_pctl is not None:
+                        edge['metrics']['atm_iv_percentile'] = round(current_iv_pctl, 1)
+                    
                     # Build structure with width cascade
                     structure = build_spread_structure_with_cascade(
                         edge, symbol, metrics, api_key, current, args.delay
                     )
                     
                     if structure:
-                        # Credit quality gate: reject steamroller trades
+                        # Credit quality gate: ONLY for credit spreads
+                        spread_type = structure.get('type', '')
                         entry_credit = structure.get('entry_credit', 0)
                         width = structure.get('width_selected', 5)
                         credit_to_width = entry_credit / width if width > 0 else 0
                         
-                        MIN_CREDIT_TO_WIDTH = 0.20  # Credit must be >= 20% of width
-                        if credit_to_width < MIN_CREDIT_TO_WIDTH:
-                            rejected_by_credit_quality += 1
-                            continue
+                        # Only apply credit gate to credit spreads
+                        if 'credit' in spread_type:
+                            MIN_CREDIT_TO_WIDTH = PHASE_CONFIG.get('min_credit_to_width',
+                                SKEW_CONFIG.get('min_credit_to_width', 0.20))
+                            if credit_to_width < MIN_CREDIT_TO_WIDTH:
+                                rejected_by_credit_quality += 1
+                                write_candidate(current, symbol, metrics['put_call_skew'], current_pctl,
+                                    current_pctl >= PERCENTILE_EXTREME_HIGH, current_pctl <= PERCENTILE_EXTREME_LOW,
+                                    'credit_quality_fail', edge, structure, 'credit_to_width_too_low')
+                                continue
+                        # Debit spreads: no credit gate (could add separate validation if needed)
                         
                         # Next-day execution
                         exec_date = get_next_trading_day(current)
                         save_backfill_report(current, exec_date, symbol, edge, structure, output_dir)
                         signals_found += 1
                         passed_gating += 1
+                        
+                        # Write to candidate funnel as saved
+                        write_candidate(current, symbol, metrics['put_call_skew'], current_pctl,
+                            current_pctl >= PERCENTILE_EXTREME_HIGH, current_pctl <= PERCENTILE_EXTREME_LOW,
+                            'passed', edge, structure, None, saved=True)
                         
                         width = structure.get('width_selected', '?')
                         max_loss = structure.get('max_loss_dollars', 0)
@@ -845,16 +1250,29 @@ def main():
                             day_signals.append(f"{symbol}: FLAT→debit w={width} ${max_loss:.0f}")
                     else:
                         rejected_by_width += 1
+                        write_candidate(current, symbol, metrics['put_call_skew'], current_pctl,
+                            current_pctl >= PERCENTILE_EXTREME_HIGH, current_pctl <= PERCENTILE_EXTREME_LOW,
+                            'width_cascade_failed', edge, None, 'no_valid_width')
+                else:
+                    # Write non-passing candidates to funnel
+                    if len(histories[symbol]['skew']) > MIN_HISTORY_FOR_PERCENTILE:
+                        write_candidate(current, symbol, metrics['put_call_skew'], current_pctl,
+                            current_pctl >= PERCENTILE_EXTREME_HIGH, current_pctl <= PERCENTILE_EXTREME_LOW,
+                            rejection)
         
         if day_signals:
             print(f"✅ {', '.join(day_signals)}")
         else:
             print("scanned" if not args.build_history else "recorded")
         
+        # Evict day from cache to free memory
+        BAR_STORE.evict_day(current)
+        
         # Checkpoint: save history periodically to survive interruptions
         if checkpoint_counter >= args.checkpoint_every:
             for sym in args.symbols:
                 save_skew_history(sym, histories[sym]['skew'], histories[sym]['percentile'])
+                save_iv_history(sym, iv_histories[sym])
             checkpoint_counter = 0
             print(f"  [Checkpoint saved - {dates_processed} days processed]")
         
@@ -863,6 +1281,7 @@ def main():
     # Final save of histories
     for symbol in args.symbols:
         save_skew_history(symbol, histories[symbol]['skew'], histories[symbol]['percentile'])
+        save_iv_history(symbol, iv_histories[symbol])
     
     print()
     print(f"=== Backfill Complete ===")
@@ -891,13 +1310,31 @@ def main():
         print(f"    {sym}: {valid}/{dates_processed} ({pct:.0f}% valid){skew_range}")
     
     if not args.build_history:
-        print(f"\nSIGNAL GATING:")
+        print(f"\\nREJECTION BREAKDOWN:")
+        print(f"  insufficient_history:  {rejected_insufficient_history}")
+        print(f"  not_extreme:           {rejected_not_extreme}")
+        print(f"  skew_not_reverting:    {rejected_by_reversion}")
+        print(f"  delta_too_small:       {rejected_by_delta_threshold}")
+        print(f"  credit_quality_fail:   {rejected_by_credit_quality}")
+        print(f"  structure_fail:        {rejected_by_width}")
+        print(f"  signals_saved:         {signals_found}")
+        print()
+        
+        # Percentile distribution debug (after warm-up)
+        print(f"PERCENTILE DISTRIBUTION (after warm-up):")
+        for sym in args.symbols:
+            stats = pctl_stats[sym]
+            if stats['count'] > 0:
+                print(f"  {sym}: n={stats['count']}, range=[{stats['min']:.1f}, {stats['max']:.1f}], "
+                      f"<=10: {stats['low']}, >=90: {stats['high']}")
+            else:
+                print(f"  {sym}: n=0 (still in warm-up)")
+        print()
+        
+        print(f"SIGNAL SUMMARY:")
         print(f"  Extreme days (pctl<=10 or >=90): {candidates_extreme}")
-        print(f"  Rejected - wrong sign: {rejected_by_reversion}")
-        print(f"  Rejected - delta too small: {rejected_by_delta_threshold}")
-        print(f"  Passed gating: {passed_gating}")
-        print(f"  Rejected by width cascade: {rejected_by_width}")
-        print(f"  Signals saved: {signals_found}")
+        print(f"  Passed gating:                   {passed_gating}")
+        print(f"  Signals saved:                   {signals_found}")
         
         if signals_found > 0:
             print(f"\nOutput: {output_dir}")
@@ -914,6 +1351,40 @@ def main():
                 print("  → Width cascade failing - check strike increments.")
     else:
         print("\nHistory built. Run again without --build-history to detect signals.")
+    
+    # Write coverage JSONL file
+    if coverage_records:
+        with open(coverage_file, 'w') as f:
+            for record in coverage_records:
+                f.write(json.dumps(record) + '\n')
+        print(f"\nCoverage log: {coverage_file}")
+    
+    # Write missingness heatmap
+    heatmap_file = output_dir / f"missingness_heatmap_{start_date.isoformat()}_{end_date.isoformat()}.json"
+    with open(heatmap_file, 'w') as f:
+        json.dump(missingness_by_month, f, indent=2)
+    print(f"Missingness heatmap: {heatmap_file}")
+    
+    # Print coverage summary with clear pass/fail for each symbol
+    print("\n" + "=" * 60)
+    print("COVERAGE SUMMARY")
+    print("=" * 60)
+    trading_days = dates_processed  # Approximation - weekdays processed
+    min_coverage_threshold = 0.90
+    all_pass = True
+    for sym in args.symbols:
+        valid = valid_days_by_symbol[sym]
+        coverage_rate = valid / trading_days if trading_days else 0
+        status_icon = "✅" if coverage_rate >= min_coverage_threshold else "❌"
+        if coverage_rate < min_coverage_threshold:
+            all_pass = False
+        print(f"  {sym}: {valid}/{trading_days} = {coverage_rate:.1%} coverage {status_icon}")
+    
+    if not all_pass:
+        print(f"\n⚠️  WARNING: Coverage below {min_coverage_threshold:.0%} threshold.")
+        print("   Backtest results will be marked INVALID.")
+    else:
+        print(f"\n✅  All symbols meet {min_coverage_threshold:.0%} coverage threshold.")
     
     return 0
 

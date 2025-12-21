@@ -101,7 +101,7 @@ def fetch_underlying_price(symbol: str, api_key: str, as_of: date) -> float:
     
     # Get daily bar for that date
     url = f"https://api.polygon.io/v2/aggs/ticker/{symbol}/range/1/day/{date_str}/{date_str}"
-    params = {'apiKey': api_key, 'adjusted': 'true'}
+    params = {'apiKey': api_key, 'adjusted': 'false'}  # UNADJUSTED to match OPRA strikes
     
     try:
         r = requests.get(url, params=params, timeout=15)
@@ -156,7 +156,7 @@ def fetch_option_chain_summary(symbol: str, api_key: str, as_of: date, target_dt
         
         # Get daily bar for that date
         url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{date_str}/{date_str}"
-        params = {'apiKey': api_key, 'adjusted': 'true'}
+        params = {'apiKey': api_key, 'adjusted': 'false'}  # UNADJUSTED
         
         try:
             r_resp = requests.get(url, params=params, timeout=15)
@@ -176,7 +176,7 @@ def fetch_option_chain_summary(symbol: str, api_key: str, as_of: date, target_dt
         ticker = f"O:{symbol}{exp_yyyymmdd}{option_type}{strike_str}"
         
         url = f"https://api.polygon.io/v2/aggs/ticker/{ticker}/range/1/day/{date_str}/{date_str}"
-        params = {'apiKey': api_key, 'adjusted': 'true'}
+        params = {'apiKey': api_key, 'adjusted': 'false'}  # UNADJUSTED
         
         try:
             r_resp = requests.get(url, params=params, timeout=15)
