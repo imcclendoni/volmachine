@@ -2068,7 +2068,7 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "🎯 Edge Portfolio", "📊 Blotter", "📜 Edge History", "📡 Signals Timeline", "🔬 Backtest"],
+            ["📈 Dashboard", "🎯 Edge Portfolio", "📊 Blotter", "🔬 Backtest"],
             label_visibility="collapsed"
         )
         
@@ -2089,7 +2089,7 @@ def main():
                 st.warning(f"Could not load edges: {e}")
         
         st.markdown("---")
-        st.caption(f"v2.5 • {datetime.now().strftime('%H:%M:%S')}")
+        st.caption(f"v3.0 • FLAT v1 LOCKED • {datetime.now().strftime('%H:%M:%S')}")
     
     # ROUTE TO PAGE
     if page == "🎯 Edge Portfolio":
@@ -2115,12 +2115,6 @@ def main():
         return
     elif page == "📊 Blotter":
         render_blotter_tab()
-        return
-    elif page == "📜 Edge History":
-        render_edge_history_tab()
-        return
-    elif page == "📡 Signals Timeline":
-        render_signals_timeline()
         return
     elif page == "🔬 Backtest":
         render_backtest_tab()
