@@ -1,36 +1,51 @@
 #!/usr/bin/env python3
 """
-Run Daily Analysis.
+Run Daily Analysis - PRODUCTION EDGES ONLY
 
-Main entry point for daily volatility desk analysis.
-Generates regime classification, edge signals, and trade candidates.
+Main entry point for daily signal generation.
+Only runs production-ready, locked edges (currently: FLAT v1).
+
+Usage:
+    python3 scripts/run_daily.py
+    python3 scripts/run_daily.py --date 2025-12-21
 """
 
 import argparse
+import json
 import sys
 from datetime import date, datetime
 from pathlib import Path
-import pytz
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from engine import VolMachineEngine
+
+def run_flat_v1_signals(run_date: date, output_dir: Path) -> dict:
+    """
+    Run FLAT v1 signal generator.
+    
+    Returns signal summary for dashboard display.
+    """
+    from scripts.generate_daily_signals import generate_signals
+    
+    reports_dir = Path("logs/backfill/v7/reports")
+    edge_output_dir = Path("logs/edges/flat")
+    
+    print(f"[FLAT v1] Generating signals for {run_date}...")
+    
+    result = generate_signals(
+        edge="flat",
+        target_date=run_date,
+        reports_dir=reports_dir,
+        output_dir=edge_output_dir
+    )
+    
+    return result
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Run daily volatility desk analysis"
-    )
-    parser.add_argument(
-        "--config",
-        default="./config/settings.yaml",
-        help="Path to settings.yaml"
-    )
-    parser.add_argument(
-        "--universe",
-        default="./config/universe.yaml",
-        help="Path to universe.yaml"
+        description="Run daily production edge analysis (FLAT v1 only)"
     )
     parser.add_argument(
         "--date",
@@ -43,28 +58,6 @@ def main():
         default="./logs/reports",
         help="Output directory for reports"
     )
-    parser.add_argument(
-        "--format",
-        nargs="+",
-        default=["markdown", "html"],
-        help="Report formats (markdown, html)"
-    )
-    parser.add_argument(
-        "--paper",
-        action="store_true",
-        help="Execute candidates in paper mode"
-    )
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Generate report without saving"
-    )
-    parser.add_argument(
-        "--session",
-        choices=["open", "close", "auto"],
-        default="auto",
-        help="Session tag for report: open (pre-market), close (EOD), auto (detect from time)"
-    )
     
     args = parser.parse_args()
     
@@ -73,209 +66,89 @@ def main():
     if args.date:
         run_date = date.fromisoformat(args.date)
     
-    # Determine session
-    if args.session == "auto":
-        # Auto-detect based on current ET time
-        try:
-            et = pytz.timezone('US/Eastern')
-            now_et = datetime.now(et)
-            # Before 12:00 ET = open session, after = close session
-            session = "open" if now_et.hour < 12 else "close"
-        except:
-            session = "open"  # Default to open if pytz fails
-    else:
-        session = args.session
+    output_dir = Path(args.output)
+    output_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"=== VolMachine Daily Run: {run_date} ({session.upper()} session) ===")
+    print("=" * 60)
+    print(f"  VOLMACHINE PRODUCTION RUN: {run_date}")
+    print("  Active Edges: FLAT v1")
+    print("=" * 60)
     print()
     
-    # Initialize engine
-    engine = VolMachineEngine(
-        config_path=args.config,
-        universe_path=args.universe,
-    )
+    # Run FLAT v1 signals
+    flat_result = run_flat_v1_signals(run_date, output_dir)
     
-    # Connect to data provider
-    if not engine.connect():
-        print("Warning: Could not connect to data provider")
-        print("Running with cached/simulated data...")
+    # Build combined report for dashboard
+    report = {
+        "report_date": run_date.isoformat(),
+        "generated_at": datetime.now().isoformat(),
+        "trading_allowed": True,
+        "do_not_trade_reasons": [],
+        "provider_status": {
+            "connected": True,
+            "source": "FlatfilesProvider",
+            "last_run": datetime.now().isoformat()
+        },
+        "universe_scan": {
+            "symbols_scanned": len(flat_result.get('universe', [])),
+            "symbols_with_data": len(flat_result.get('universe', [])),
+            "symbols_with_edges": flat_result.get('candidate_count', 0),
+            "symbols_with_trades": flat_result.get('candidate_count', 0),
+            "symbol_list": flat_result.get('universe', [])
+        },
+        "vrp_metrics": [],
+        "regime": {
+            "state": "production",
+            "confidence": 1.0,
+            "rationale": "FLAT v1 locked production mode - IVp≤75 gate active"
+        },
+        "edges": [
+            {
+                "edge_id": "flat",
+                "edge_version": "v1.0",
+                "candidate_count": flat_result.get('candidate_count', 0)
+            }
+        ],
+        "candidates": flat_result.get('candidates', []),
+        "portfolio": {
+            "positions_open": 0,
+            "total_max_loss_dollars": 0.0,
+            "realized_pnl_today_dollars": 0.0,
+            "unrealized_pnl_dollars": 0.0,
+            "kill_switch_active": False,
+            "kill_switch_reason": None
+        }
+    }
     
-    # Run daily analysis
-    report = engine.run_daily(run_date)
-    
-    # Get enabled symbols for display
-    enabled_symbols = engine.get_enabled_symbols()
-    
+    # Print summary
     print()
     print("=" * 60)
     print("                     RUN SUMMARY")
     print("=" * 60)
     print()
-    
-    # Regime
-    print(f"📊 REGIME: {report.regime.regime.value.upper()} ({report.regime.confidence:.0%} confidence)")
-    print(f"   {report.regime.rationale}")
+    print(f"📊 FLAT v1 Edge: {flat_result.get('candidate_count', 0)} candidates")
+    print(f"   Universe: {len(flat_result.get('universe', []))} symbols")
+    print(f"   Regime Gate: IVp ≤ {flat_result.get('regime_gate', {}).get('max_atm_iv_pctl', 75)}")
     print()
     
-    # Universe Summary
-    symbols_with_edges = list(set(e.symbol for e in report.edges))
-    symbols_with_trades = list(set(c.symbol for c in report.candidates if c.recommendation == 'TRADE'))
-    
-    print(f"🔍 UNIVERSE: {len(enabled_symbols)} symbols scanned")
-    print(f"   Edges Found: {len(report.edges)} across {len(symbols_with_edges)} symbols")
-    print(f"   Trade Candidates: {len(symbols_with_trades)} symbols")
-    print()
-    
-    # Symbol-by-Symbol Breakdown
-    print("📋 SYMBOL BREAKDOWN:")
-    print("-" * 60)
-    print(f"{'SYMBOL':<8} {'EDGE':<12} {'STRENGTH':<10} {'OUTCOME':<15} {'REASON':<15}")
-    print("-" * 60)
-    
-    for symbol in enabled_symbols:
-        # Find edges for this symbol
-        sym_edges = [e for e in report.edges if e.symbol == symbol]
-        sym_candidates = [c for c in report.candidates if c.symbol == symbol]
-        
-        if not sym_edges:
-            print(f"{symbol:<8} {'--':<12} {'--':<10} {'NO EDGE':<15}")
-            continue
-        
-        for i, edge in enumerate(sym_edges):
-            edge_type = edge.edge_type.value if hasattr(edge.edge_type, 'value') else str(edge.edge_type)
-            strength = f"{edge.strength:.0%}"
-            
-            # Find candidate for this edge
-            matching_candidates = [c for c in sym_candidates if c.edge.edge_type == edge.edge_type]
-            
-            if matching_candidates:
-                cand = matching_candidates[0]
-                outcome = cand.recommendation
-                # Get failure reason for PASS
-                if outcome == 'PASS':
-                    reason = cand.validation_messages[0][:15] if cand.validation_messages else "structure fail"
-                else:
-                    reason = ""
-            else:
-                outcome = "NO STRUCTURE"
-                reason = ""
-            
-            print(f"{symbol:<8} {edge_type:<12} {strength:<10} {outcome:<15} {reason}")
-    
-    print("-" * 60)
-    print()
-    
-    # Trading Status
-    if not report.trading_allowed:
-        print("⛔ TRADING BLOCKED")
-        for reason in report.do_not_trade_reasons:
-            print(f"  - {reason}")
-        print()
+    if flat_result.get('candidates'):
+        print("🎯 TRADE CANDIDATES:")
+        for c in flat_result['candidates']:
+            structure = c.get('structure', {})
+            print(f"   {c['symbol']}: IVp={c.get('atm_iv_percentile', 0):.0f}, "
+                  f"debit=${structure.get('entry_debit', 0):.2f}, "
+                  f"max_loss=${structure.get('max_loss', 0):.0f}")
     else:
-        print("✅ Trading Allowed")
+        print("💤 No FLAT signals today")
     
-    # Show top candidates
-    if report.candidates:
-        print("\n=== Trade Candidates ===")
-        for i, c in enumerate(report.candidates[:5], 1):
-            emoji = "✅" if c.recommendation == "TRADE" else "⚠️" if c.recommendation == "REVIEW" else "❌"
-            print(f"{i}. {emoji} {c.symbol} - {c.structure.structure_type.value}")
-            # Add FALLBACK warning if edge using absolute thresholds (no percentile history)
-            is_fallback = c.edge.metrics.get('history_mode', 1) == 0 if c.edge and c.edge.metrics else False
-            fallback_label = " [FALLBACK]" if is_fallback else ""
-            print(f"   Edge: {c.edge.edge_type.value} ({c.edge.strength:.0%}){fallback_label}")
-            # IMPORTANT: Use max_loss_dollars not max_loss (points vs dollars)
-            max_loss_dollars = c.structure.max_loss_dollars if c.structure.max_loss_dollars else 0
-            max_loss_str = f"${max_loss_dollars:.2f}" if max_loss_dollars else "N/A"
-            print(f"   Max Loss: {max_loss_str}, Contracts: {c.recommended_contracts}")
-            # Show risk ladder (what-if sizing at 1%, 2%, 5%, 10%)
-            if hasattr(c, 'what_if_sizes') and c.what_if_sizes:
-                ladder = ", ".join([f"{k}={v['contracts']}ct" for k, v in c.what_if_sizes.items() if v.get('allowed', False)])
-                if ladder:
-                    print(f"   Risk Ladder: {ladder}")
+    print()
+    print("✅ Trading Allowed" if report['trading_allowed'] else "⛔ Trading Blocked")
     
     # Save report
-    if not args.dry_run:
-        saved = engine.export_report(report, args.output)
-        print(f"\nReports saved:")
-        for path in saved:
-            print(f"  - {path}")
-        
-        # Also export JSON for Desk UI with diagnostics
-        from engine.report_json import export_report_json
-        from datetime import datetime
-        
-        # Build provider status
-        provider_status = {
-            'connected': engine.provider is not None,
-            'source': engine.provider.__class__.__name__ if engine.provider else 'none',
-            'last_run': datetime.now().isoformat(),
-        }
-        
-        # Build universe scan summary
-        symbols_scanned = list(engine.get_enabled_symbols())
-        symbols_with_edges = list(set(e.symbol for e in report.edges))
-        symbols_with_trades = list(set(c.symbol for c in report.candidates if c.recommendation == 'TRADE'))
-        
-        universe_scan = {
-            'symbols_scanned': len(symbols_scanned),
-            'symbols_with_data': len(symbols_scanned),  # Assume all scanned have data for now
-            'symbols_with_edges': len(symbols_with_edges),
-            'symbols_with_trades': len(symbols_with_trades),
-            'symbol_list': symbols_scanned,
-        }
-        
-        # Build VRP metrics from edge signals
-        vrp_metrics = []
-        for edge in report.edges:
-            if edge.edge_type == 'vrp':
-                vrp_metrics.append({
-                    'symbol': edge.symbol,
-                    'atm_iv': edge.metrics.get('atm_iv', 0),
-                    'rv_20': edge.metrics.get('rv_20', 0),
-                    'iv_rv_ratio': edge.metrics.get('iv_rv_ratio', 0),
-                    'threshold': 1.12,  # Default VRP threshold
-                    'status': 'ABOVE_THRESHOLD' if edge.metrics.get('iv_rv_ratio', 0) >= 1.12 else 'BELOW_THRESHOLD',
-                })
-        
-        json_path = export_report_json(
-            report_date=run_date,
-            regime=report.regime,
-            edges=report.edges,
-            candidates=report.candidates,
-            trading_allowed=report.trading_allowed,
-            do_not_trade_reasons=report.do_not_trade_reasons,
-            output_dir=args.output,
-            session=session,
-            provider_status=provider_status,
-            universe_scan=universe_scan,
-            vrp_metrics=vrp_metrics,
-        )
-        print(f"  - {json_path}")
-    
-    # Paper trading execution
-    if args.paper and report.trading_allowed:
-        print("\n=== Paper Trading ===")
-        from backtest import PaperSimulator, PaperConfig
-        from risk import Portfolio, LimitTracker, LimitConfig
-        
-        # Use config equity from engine, not hardcoded
-        account_equity = engine.sizing_config.account_equity
-        
-        portfolio = Portfolio(account_equity=account_equity)
-        limit_tracker = LimitTracker(LimitConfig(account_equity=account_equity))
-        simulator = PaperSimulator(portfolio, limit_tracker, PaperConfig())
-        
-        for candidate in report.candidates:
-            if candidate.recommendation == "TRADE":
-                result = simulator.execute_candidate(candidate)
-                if result.success:
-                    print(f"📈 Executed: {candidate.symbol} - {result.message}")
-                else:
-                    print(f"❌ Skipped: {candidate.symbol} - {result.message}")
-        
-        summary = simulator.get_summary()
-        print(f"\nPortfolio: {summary['positions_open']} positions, ${summary['total_max_loss_dollars']:.0f} max loss")
+    latest_path = output_dir / "latest.json"
+    with open(latest_path, 'w') as f:
+        json.dump(report, f, indent=2, default=str)
+    print(f"\nReport saved: {latest_path}")
     
     print("\n=== Done ===")
     return 0
