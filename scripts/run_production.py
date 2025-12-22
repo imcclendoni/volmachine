@@ -90,7 +90,13 @@ def run_edge_signals_live(
         universe = ['SPY', 'QQQ', 'DIA', 'XLK', 'XLE']
         result = generate_iv_carry_mr_live(provider, effective_date, universe)
     elif edge == 'flat':
-        universe = ['SPY', 'QQQ', 'IWM', 'TLT']  # FLAT universe
+        # FLAT universe (18 symbols per EDGE_FLAT_v1.md)
+        universe = [
+            'SPY', 'QQQ', 'IWM', 'DIA',
+            'XLF', 'XLE', 'XLK', 'XLI', 'XLY', 'XLP', 'XLU',
+            'TLT', 'IEF',
+            'GLD', 'SLV', 'USO', 'EEM', 'HYG'
+        ]
         result = generate_flat_live(provider, effective_date, universe, ivp_gate=75.0)
     else:
         raise ValueError(f"Unknown edge: {edge}")
