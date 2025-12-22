@@ -292,34 +292,32 @@ class RiskEngine:
             
             pre_filtered.append((candidate, cluster))
         
-        # Step 2: Same-day cluster deduplication (best edge wins)
+        # Step 2: Same-day SYMBOL deduplication (best edge wins per symbol)
+        # This allows multiple symbols per cluster per day while preventing
+        # duplicate entries of the same symbol on the same day.
         if self.config.cluster_dedup_mode == 'best_edge':
-            # Group by cluster
-            by_cluster: Dict[str, List[Tuple[TradeCandidate, str]]] = {}
-            no_cluster = []
+            # Group by SYMBOL (not cluster) - allows SPY+QQQ+DIA same day
+            by_symbol: Dict[str, List[Tuple[TradeCandidate, str]]] = {}
             
             for candidate, cluster in pre_filtered:
-                if cluster:
-                    by_cluster.setdefault(cluster, []).append((candidate, cluster))
-                else:
-                    no_cluster.append((candidate, cluster))
+                by_symbol.setdefault(candidate.symbol, []).append((candidate, cluster))
             
-            # Take best from each cluster
-            deduped = list(no_cluster)
-            for cluster, group in by_cluster.items():
+            # Take best from each symbol
+            deduped = []
+            for symbol, group in by_symbol.items():
                 if len(group) == 1:
                     deduped.append(group[0])
                 else:
-                    # Best edge wins
+                    # Best edge wins for this symbol
                     best = max(group, key=lambda x: x[0].edge_strength)
                     deduped.append(best)
-                    # Reject others
+                    # Reject others (duplicate same-symbol signals)
                     for item in group:
                         if item != best:
                             rejected.append(RejectedTrade(
                                 candidate=item[0],
                                 reason=RejectionReason.SAME_DAY_CLUSTER_DEDUP,
-                                details=f"Better edge in cluster: {best[0].symbol}"
+                                details=f"Better edge for {symbol}: {best[0].edge_strength:.2f}"
                             ))
                             self.stats['rejected_same_day_dedup'] += 1
             

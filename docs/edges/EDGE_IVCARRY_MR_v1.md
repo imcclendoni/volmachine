@@ -1,6 +1,6 @@
 # EDGE: IV Carry MR v1
 
-> **Status**: PRODUCTION (2025-12-21)  
+> **Status**: LOCKED (2025-12-22)  
 > **Universe**: SPY, QQQ, DIA, XLK, XLE  
 > **Strategy**: IV Mean-Reversion via Credit Spreads
 
@@ -26,7 +26,6 @@
 # Anchor to nearest $5 grid point, then find closest available
 anchor_strike = round(underlying_price / 5) * 5
 short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
-# Note: For symbols with $1 or $0.50 increments, adjust anchor logic
 ```
 
 ### Direction Logic
@@ -49,27 +48,56 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 
 ---
 
-## Risk Math (FROZEN)
+## RiskEngine Config (FROZEN)
 
 | Parameter | Value |
 |-----------|-------|
 | `initial_equity` | $25,000 |
 | `risk_per_trade_pct` | 2% |
-| Position sizing | `contracts = floor(risk_budget / max_loss)` |
+| `max_open_positions` | 6 |
+| `max_total_risk_pct` | 6% |
+| `clusters` | index_core=[SPY,QQQ,DIA], sector_xlk=[XLK], sector_xle=[XLE] |
+| `max_cluster_positions` | 3 (index_core), 1 (sectors) |
+| `dd_kill_pct` | 15% |
+
+---
+
+## Confirmed Baseline (LOCKED)
+
+### Portfolio (with RiskEngine)
+| Metric | Value |
+|--------|-------|
+| Trades (4yr) | 52 |
+| Win Rate | 71.2% |
+| Profit Factor | **2.22** |
+| Total Return | +15.2% |
+| CAGR | 3.6% |
+
+### Walk-Forward Validation
+| Period | Trades | PF | Return |
+|--------|--------|-----|--------|
+| In-sample (22-23) | 24 | 1.15 | +1.3% |
+| **Out-of-sample (24-25)** | 28 | **5.06** | +13.8% |
+
+### Friction Sensitivity
+| Test | PF |
+|------|-----|
+| Base | 2.38 |
+| +$0.10/leg | **1.59** ✅ |
 
 ---
 
 ## Production Universe (5 symbols) ✅
 
-| Symbol | Trades | Skipped | Edge PF | WR | DD (Phase 2) | Return (Phase 2) |
-|--------|--------|---------|---------|-----|--------------|------------------|
-| SPY | 32 | 0 | 1.82 | 69% | 2.3% | +14% |
-| QQQ | 31 | 0 | 1.76 | 71% | 7.4% | +18% |
-| DIA | 20 | 2 | inf* | 90% | 0.0%* | +18% |
-| XLK | 15 | 5 | 5.11 | 67% | 0.9% | +5% |
-| XLE | 21 | 6 | 2.48 | 71% | 1.6% | +5% |
+| Symbol | Trades | PF | WR |
+|--------|--------|-----|-----|
+| SPY | 12 | 1.82 | 75% |
+| QQQ | 12 | 1.76 | 58% |
+| DIA | 9 | ∞* | 89% |
+| XLK | 6 | 5.11 | 67% |
+| XLE | 13 | 2.48 | 69% |
 
-> *DIA: PF=infinity (no realized losses). This is valid but **fragile**—any future loss will collapse PF toward normal. Treat as promising but unproven at scale.
+> *DIA: PF=infinity (no losses). Treat as promising but fragile.
 
 ---
 
@@ -79,46 +107,27 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 |--------|-------------|
 | **Production** | PF ≥ 1.3 AND DD ≤ 20% AND (≥20 trades OR ≥90% executable) |
 | **Marginal** | PF 1.1–1.3 OR low trade count |
-| **Quarantine** | Data-limited (high skip rate, survivorship bias) |
+| **Quarantine** | Data-limited (high skip rate) |
 | **Excluded** | PF < 1.1 OR negative expectancy |
 
 ---
 
-## Marginal (acceptable for smoothing) ⚠️
-
-| Symbol | PF | Issue |
-|--------|----|-------|
-| XLF | 1.27 | Below 1.3 threshold |
-| TLT | 1.18 | Below 1.3 threshold |
-
----
-
-## Quarantine (data-limited, track forward only) 🧪
-
-| Symbol | Trades | Skipped | Issue |
-|--------|--------|---------|-------|
-| XLY | 8 | 7 | Survivorship bias - early signals missing |
-| XLI | 3 | 6 | Too few trades |
-| XLP | 6 | 14 | High skip rate |
-
-**Graduation:** ≥20 executed trades OR ≥2 years forward signals with PF ≥ 1.3
-
----
-
-## Excluded (failed validation) ❌
+## Excluded ❌
 
 | Symbol | PF | Reason |
 |--------|----|--------|
 | IWM | 0.97 | Negative expectancy |
 | GLD | 0.67 | Negative expectancy |
+| XLF | 1.27 | Below 1.3 threshold |
+| TLT | 1.18 | Below 1.3 threshold |
 
 ---
 
 ## Invariants (LOCKED)
 
-1. No parameter changes without v2
-2. No structural changes without v2
-3. No FLAT code mixing
+1. **No parameter changes without v2**
+2. **No structural changes without v2**
+3. **No FLAT code mixing**
 4. Baselines in `logs/edges/iv_carry_mr/locked_baselines/`
 
 ---
@@ -131,3 +140,4 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | Signal | `edges/iv_carry_mr/signal.py` |
 | Backtest | `scripts/run_iv_carry_backtest.py` |
 | Baselines | `logs/edges/iv_carry_mr/locked_baselines/` |
+ |
