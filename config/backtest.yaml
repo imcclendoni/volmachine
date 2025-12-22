@@ -47,6 +47,27 @@ strategies:
     min_delta: 0.005
     min_percentile_change: 10
 
+  # ============================================================
+  # STRATEGY: TERM STRUCTURE MEAN-REVERSION (v1)
+  # ============================================================
+  # Orthogonal to FLAT - trades front-vs-back IV dislocation
+  
+  term_structure_mr:
+    # FLAT Tier-1 only (17 symbols) - XLV excluded until Phase-1 validated
+    enabled_symbols: ["SPY", "QQQ", "IWM", "DIA", "XLF", "XLE", "XLK", "XLI", "XLY", "XLP", "XLU", "TLT", "IEF", "GLD", "SLV", "USO", "EEM"]
+    
+    # DTE ranges for front/back comparison
+    front_dte_range: [20, 35]
+    back_dte_range: [60, 90]
+    
+    # Z-score configuration
+    z_threshold: 2.0
+    lookback_days: 120
+    min_history_days: 60
+    
+    # Width cascade
+    width_cascade: [5, 10]
+
 # ============================================================
 # REGIME GATE - Config-driven (mandatory for FLAT)
 # ============================================================
@@ -56,6 +77,9 @@ regime_gate:
     max_atm_iv_pctl: 75   # Optimal from IV sweep (PF 2.15)
   steep:
     max_atm_iv_pctl: null  # Not yet validated
+  term_structure_mr:
+    max_atm_iv_pctl: 85
+    max_vix: 30
 
 # ============================================================
 # FLAT v1.0 DOCUMENTATION

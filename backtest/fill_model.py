@@ -310,3 +310,100 @@ def calculate_strict_exit_fill(
         'exit_debit': exit_debit,
         'exit_credit': exit_credit,
     }
+
+
+# =============================================================================
+# Calendar Spread Fill Functions
+# =============================================================================
+
+def calculate_calendar_entry_fill(
+    front_close: float,  # Front leg (sell)
+    back_close: float,   # Back leg (buy)
+    config: FillConfig,
+    is_high_vol: bool = False,
+) -> Dict[str, Any]:
+    """
+    Calculate calendar spread entry fill.
+    
+    Calendar entry: sell front (at bid), buy back (at ask)
+    Net debit = back_ask - front_bid (should be positive for long calendar)
+    """
+    front_bid, front_ask = config.get_bid_ask(front_close, is_high_vol)
+    back_bid, back_ask = config.get_bid_ask(back_close, is_high_vol)
+    
+    front_fill = front_bid   # Sell at bid
+    back_fill = back_ask     # Buy at ask
+    
+    net_debit = back_fill - front_fill
+    
+    commissions = 2 * config.commission_per_contract
+    
+    unexecutable = net_debit <= 0  # Long calendar should be a debit
+    
+    return {
+        'front_fill': front_fill,
+        'back_fill': back_fill,
+        'net_debit': net_debit,
+        'net_premium': -net_debit,  # Negative = debit paid
+        'commissions': commissions,
+        'unexecutable': unexecutable,
+    }
+
+
+def calculate_calendar_exit_fill(
+    front_close: float,  # Front leg (now buy to close)
+    back_close: float,   # Back leg (now sell to close)
+    config: FillConfig,
+    is_high_vol: bool = False,
+) -> Dict[str, Any]:
+    """
+    Calculate calendar spread exit fill.
+    
+    Calendar exit: buy front (at ask), sell back (at bid)
+    Net credit = back_bid - front_ask (could be positive or negative)
+    """
+    front_bid, front_ask = config.get_bid_ask(front_close, is_high_vol)
+    back_bid, back_ask = config.get_bid_ask(back_close, is_high_vol)
+    
+    front_fill = front_ask   # Buy at ask to close short
+    back_fill = back_bid     # Sell at bid to close long
+    
+    net_credit = back_fill - front_fill
+    
+    commissions = 2 * config.commission_per_contract
+    
+    return {
+        'front_fill': front_fill,
+        'back_fill': back_fill,
+        'net_credit': net_credit,
+        'net_premium': net_credit,  # Positive = credit received
+        'commissions': commissions,
+    }
+
+
+def calculate_calendar_pnl(
+    entry_debit: float,     # What we paid to enter (positive)
+    exit_credit: float,     # What we received on exit (could be negative)
+    entry_commissions: float,
+    exit_commissions: float,
+    contracts: int = 1,
+) -> Dict[str, float]:
+    """
+    Calculate realized PnL for calendar spread.
+    
+    PnL = (exit_credit - entry_debit) * 100 * contracts - commissions
+    
+    Example:
+        entry_debit = $2.50 (paid to enter)
+        exit_credit = $3.00 (received on exit)
+        PnL = (3.00 - 2.50) * 100 - commissions = $50 - commissions
+    """
+    gross_pnl = (exit_credit - entry_debit) * 100 * contracts
+    total_commissions = (entry_commissions + exit_commissions) * contracts
+    net_pnl = gross_pnl - total_commissions
+    
+    return {
+        'gross_pnl': gross_pnl,
+        'commissions': total_commissions,
+        'net_pnl': net_pnl,
+    }
