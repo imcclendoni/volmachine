@@ -82,7 +82,7 @@ def run_edge_signals_live(
     Computes signals directly from flatfiles - no backfill dependency.
     """
     from data.live_signal_provider import LiveSignalProvider
-    from data.live_signal_generators import generate_iv_carry_mr_live
+    from data.live_signal_generators import generate_iv_carry_mr_live, generate_flat_live
     
     provider = LiveSignalProvider(flatfiles_dir)
     
@@ -90,13 +90,8 @@ def run_edge_signals_live(
         universe = ['SPY', 'QQQ', 'DIA', 'XLK', 'XLE']
         result = generate_iv_carry_mr_live(provider, effective_date, universe)
     elif edge == 'flat':
-        # FLAT live not yet implemented - fall back to backfill mode
-        result = {
-            'error': 'FLAT live mode not yet implemented',
-            'source': 'live',
-            'candidate_count': 0,
-            'candidates': [],
-        }
+        universe = ['SPY', 'QQQ', 'IWM', 'TLT']  # FLAT universe
+        result = generate_flat_live(provider, effective_date, universe, ivp_gate=75.0)
     else:
         raise ValueError(f"Unknown edge: {edge}")
     

@@ -275,3 +275,225 @@ def generate_iv_carry_mr_live(
         'candidates': candidates,
         'candidate_count': len(candidates),
     }
+
+
+def generate_flat_live(
+    provider: LiveSignalProvider,
+    effective_date: date,
+    universe: List[str],
+    ivp_gate: float = 75.0,
+) -> Dict[str, Any]:
+    """
+    Generate FLAT signals by computing from flatfiles.
+    
+    FLAT = flat skew (≤10th percentile) that is reverting.
+    
+    For each symbol:
+    1. Load skew history from cache
+    2. Compute ATM IV percentile (IVp gate)
+    3. Compute current skew and percentile
+    4. Check if flat + reverting
+    5. Build call debit spread structure
+    
+    Returns: signals dict ready for JSON output
+    """
+    import numpy as np
+    
+    signal_date = effective_date
+    execution_date = next_trading_day(effective_date)
+    
+    candidates = []
+    gate_samples = []
+    symbols_scanned = 0
+    
+    # Load today's options
+    provider.load_day(effective_date)
+    
+    for symbol in universe:
+        symbols_scanned += 1
+        
+        # Load skew history from cache
+        cache_path = provider.flatfiles_dir.parent / 'edges' / f'{symbol}_skew_history_v4.json'
+        
+        if not cache_path.exists():
+            gate_samples.append({
+                'symbol': symbol,
+                'status': 'skip',
+                'reason': 'no skew history cache',
+            })
+            continue
+        
+        try:
+            with open(cache_path) as f:
+                history = json.load(f)
+        except Exception:
+            gate_samples.append({
+                'symbol': symbol,
+                'status': 'skip',
+                'reason': 'could not load skew history',
+            })
+            continue
+        
+        skew_history = history.get('skew', [])
+        pctl_history = history.get('percentile', [])
+        atm_iv_history = history.get('atm_iv', [])
+        
+        if len(skew_history) < 60:
+            gate_samples.append({
+                'symbol': symbol,
+                'status': 'skip',
+                'reason': f'insufficient skew history ({len(skew_history)} days)',
+            })
+            continue
+        
+        # Get current values (last entry)
+        current_skew = skew_history[-1] if skew_history else 0
+        current_pctl = pctl_history[-1] if pctl_history else 50
+        current_atm_iv = atm_iv_history[-1] if atm_iv_history else 0
+        
+        # Compute IVp (ATM IV percentile)
+        if len(atm_iv_history) >= 60:
+            ivp = (sum(1 for iv in atm_iv_history[-60:] if iv <= current_atm_iv) / 60) * 100
+        else:
+            ivp = 50.0
+        
+        # Compute skew delta (reverting check)
+        skew_delta = 0.0
+        pctl_delta = 0.0
+        if len(skew_history) >= 5:
+            skew_delta = current_skew - skew_history[-5]
+            pctl_delta = current_pctl - (pctl_history[-5] if len(pctl_history) >= 5 else current_pctl)
+        
+        # Gate checks
+        ivp_pass = ivp <= ivp_gate
+        is_flat = current_pctl <= 10
+        is_reverting = skew_delta > 0.005 or pctl_delta > 10  # Skew increasing
+        
+        gate_pass = ivp_pass and is_flat and is_reverting
+        
+        gate_samples.append({
+            'symbol': symbol,
+            'ivp': round(ivp, 1),
+            'skew_pctl': round(current_pctl, 1),
+            'skew_delta': round(skew_delta, 4),
+            'ivp_pass': ivp_pass,
+            'is_flat': is_flat,
+            'is_reverting': is_reverting,
+            'gate_pass': gate_pass,
+        })
+        
+        if not gate_pass:
+            continue
+        
+        # Get underlying price
+        prices = provider.get_underlying_prices(symbol, [effective_date])
+        price = prices[0] if prices and prices[0] else 0
+        
+        if price <= 0:
+            continue
+        
+        # Find target expiry (21-45 DTE)
+        expiries = provider.bar_store.get_available_expiries(effective_date, symbol)
+        target_expiry = None
+        for exp_date, dte in expiries:
+            if 21 <= dte <= 45:
+                target_expiry = exp_date
+                break
+        
+        if target_expiry is None:
+            continue
+        
+        # Build call debit spread
+        atm_strike = round(price / 5) * 5
+        
+        strikes_data = provider.bar_store.get_available_strikes(effective_date, symbol, target_expiry, right='C')
+        if not strikes_data:
+            continue
+        
+        available_strikes = sorted(strikes_data.keys())
+        
+        # Long ATM, Short OTM
+        long_strike = min(available_strikes, key=lambda x: abs(x - atm_strike))
+        width = 5
+        short_strike = long_strike + width
+        
+        if short_strike not in available_strikes:
+            width = 10
+            short_strike = long_strike + width
+            if short_strike not in available_strikes:
+                continue
+        
+        # Get prices
+        long_bar = strikes_data.get(long_strike, {}).get('C')
+        short_bar = strikes_data.get(short_strike, {}).get('C')
+        
+        if not long_bar or not short_bar:
+            continue
+        
+        long_price = long_bar.get('close', 0)
+        short_price = short_bar.get('close', 0)
+        
+        entry_debit = long_price - short_price
+        max_loss = entry_debit * 100
+        max_profit = (width - entry_debit) * 100
+        
+        if entry_debit <= 0:
+            continue
+        
+        candidates.append({
+            'symbol': symbol,
+            'signal_date': signal_date.isoformat(),
+            'execution_date': execution_date.isoformat(),
+            'atm_iv_percentile': round(ivp, 1),
+            'skew_percentile': round(current_pctl, 1),
+            'skew_delta': round(skew_delta, 4),
+            'current_skew': round(current_skew, 4),
+            'underlying_price': round(price, 2),
+            'target_expiry': target_expiry.isoformat(),
+            'structure': {
+                'type': 'call_debit_spread',
+                'long_strike': long_strike,
+                'short_strike': short_strike,
+                'width': width,
+                'expiry': target_expiry.isoformat(),
+                'entry_debit': round(entry_debit, 2),
+                'max_loss': round(max_loss, 2),
+                'max_profit': round(max_profit, 2),
+                'legs': [
+                    {
+                        'strike': long_strike,
+                        'right': 'C',
+                        'side': 'BUY',
+                        'expiry': target_expiry.isoformat(),
+                    },
+                    {
+                        'strike': short_strike,
+                        'right': 'C',
+                        'side': 'SELL',
+                        'expiry': target_expiry.isoformat(),
+                    }
+                ]
+            },
+            'edge_strength': round((100 - current_pctl) / 100, 2),
+            'rationale': f"FLAT: skew at {current_pctl:.0f}th pctl, reverting (Δ={skew_delta:.4f}). IVp {ivp:.0f} (gate: {ivp_gate})"
+        })
+    
+    provider._data_proof['symbols_scanned'] = symbols_scanned
+    
+    return {
+        'edge_id': 'flat',
+        'edge_version': 'v1.0',
+        'source': 'live',
+        'signal_date': signal_date.isoformat(),
+        'execution_date': execution_date.isoformat(),
+        'universe': universe,
+        'regime_gate': {
+            'max_atm_iv_pctl': ivp_gate,
+            'skew_pctl_threshold': 10,
+        },
+        'data_snapshot': provider.get_data_proof(),
+        'gate_samples': gate_samples,
+        'candidates': candidates,
+        'candidate_count': len(candidates),
+    }
+
