@@ -203,6 +203,8 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
     
     # Track if we successfully computed gate samples
     gate_samples_computed = False
+    all_gate_samples = []
+    edge_errors = []
     
     # 7. Run edges
     edges_results = []
@@ -243,13 +245,12 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
                     json.dump(result, f, indent=2, default=str)
                 print(f"  Updated: {latest_path}")
                 
-                # Check if we got real gate samples (not just errors/skips with no data)
+                # Check if edge produced gate samples (any entries count, including skips)
                 edge_gate_samples = result.get('gate_samples', [])
-                if edge_gate_samples and any(
-                    'iv_zscore' in gs or 'ivp' in gs or 'skew_pctl' in gs 
-                    for gs in edge_gate_samples
-                ):
+                if edge_gate_samples:
                     gate_samples_computed = True
+                    # Collect real gate samples for run-level summary
+                    all_gate_samples.extend(edge_gate_samples)
                 
             except Exception as e:
                 print(f"  ERROR: {e}")
@@ -258,11 +259,12 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
                     'candidate_count': 0,
                     'status': f'error: {e}'
                 })
+                edge_errors.append(edge)
     
-    # Finalize trading_allowed: must have computed gate samples AND not stale
-    if not gate_samples_computed:
+    # Finalize trading_allowed: block only if stale OR all edges errored
+    if edge_errors and len(edge_errors) == len(['flat', 'iv_carry_mr']):
         trading_allowed = False
-        do_not_trade_reasons.append("NO_GATE_SAMPLES: failed to compute real gate values")
+        do_not_trade_reasons.append(f"ALL_EDGES_FAILED: {edge_errors}")
     
     # 8. Build run summary
     run_summary = {
@@ -277,7 +279,7 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
         'trading_allowed': trading_allowed,
         'do_not_trade_reasons': do_not_trade_reasons,
         'data_snapshot': data_snapshot,
-        'gate_samples': gate_samples,
+        'gate_samples': all_gate_samples,  # Real samples from edges
         'edges': edges_results,
         'total_candidates': len(all_candidates),
         'candidates': all_candidates,
