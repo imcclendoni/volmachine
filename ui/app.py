@@ -2056,6 +2056,137 @@ def render_backtest_tab():
         st.info("Click 'Run Backtest' to analyze historical edge performance.")
 
 
+def render_run_logs_tab():
+    """
+    Run Logs tab - audit trail for all production runs.
+    Shows run history, gate samples, and pass/fail reasons.
+    """
+    import glob
+    
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, rgba(15,23,42,0.9), rgba(30,41,59,0.7)); 
+                border: 1px solid rgba(71,85,105,0.4); border-radius: 12px; padding: 24px; margin-bottom: 20px;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="font-size: 2rem;">📜</span>
+            <div>
+                <div style="font-size: 1.5rem; font-weight: 700; color: #f1f5f9;">RUN LOGS</div>
+                <div style="color: #94a3b8; font-size: 0.9rem;">Audit trail for all production runs</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Find all run directories
+    runs_dir = Path(__file__).parent.parent / 'logs' / 'runs'
+    run_dirs = []
+    
+    if runs_dir.exists():
+        for date_dir in sorted(runs_dir.iterdir(), reverse=True):
+            if date_dir.is_dir() and not date_dir.name.startswith('.'):
+                for run_dir in sorted(date_dir.iterdir(), reverse=True):
+                    if run_dir.is_dir() and run_dir.name.startswith('run_'):
+                        meta_file = run_dir / 'run_meta.json'
+                        if meta_file.exists():
+                            run_dirs.append(meta_file)
+    
+    if not run_dirs:
+        st.info("No run logs found. Click 'INITIATE SEQUENCE' to generate your first run.")
+        return
+    
+    # Show summary
+    st.metric("Total Runs", len(run_dirs))
+    st.markdown("---")
+    
+    # Load and display runs
+    for meta_path in run_dirs[:20]:  # Show last 20 runs
+        try:
+            with open(meta_path) as f:
+                meta = json.load(f)
+            
+            run_id = meta.get('run_id', 'unknown')
+            run_ts = meta.get('run_ts_utc', '')[:19]
+            effective_date = meta.get('effective_date', '')
+            trading_allowed = meta.get('trading_allowed', False)
+            is_stale = meta.get('is_stale', False)
+            total_candidates = meta.get('total_candidates', 0)
+            do_not_trade = meta.get('do_not_trade_reasons', [])
+            edges = meta.get('edges', [])
+            
+            # Status colors
+            status_color = "#10b981" if trading_allowed else "#ef4444"
+            status_text = "✅ TRADING ALLOWED" if trading_allowed else "⛔ BLOCKED"
+            
+            st.markdown(f"""
+            <div style="background: rgba(30,41,59,0.5); border-left: 4px solid {status_color}; 
+                        padding: 16px; margin-bottom: 12px; border-radius: 0 8px 8px 0;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                    <div>
+                        <span style="color: #3b82f6; font-weight: 700; font-size: 1.1rem;">Run {run_id}</span>
+                        <span style="color: #64748b; margin-left: 12px;">{run_ts}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <span style="color: {status_color}; font-weight: 600;">{status_text}</span>
+                    </div>
+                </div>
+                <div style="margin-top: 8px; color: #94a3b8; font-size: 0.9rem;">
+                    Effective: {effective_date} | Candidates: {total_candidates} | Stale: {is_stale}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.expander(f"View Details - Run {run_id}"):
+                # Do not trade reasons
+                if do_not_trade:
+                    st.warning("**Do Not Trade Reasons:**")
+                    for reason in do_not_trade:
+                        st.write(f"- {reason}")
+                
+                # Edge results
+                st.subheader("Edge Results")
+                for edge in edges:
+                    edge_id = edge.get('edge_id', 'unknown')
+                    count = edge.get('candidate_count', 0)
+                    status = edge.get('status', 'unknown')
+                    st.write(f"**{edge_id.upper()}**: {count} candidates ({status})")
+                
+                # Gate samples - load from edge files
+                st.subheader("Gate Samples (Audit Trail)")
+                
+                for edge_name in ['flat', 'iv_carry_mr']:
+                    edge_file = Path(__file__).parent.parent / 'logs' / 'edges' / edge_name / 'latest_signals.json'
+                    if edge_file.exists():
+                        try:
+                            with open(edge_file) as f:
+                                edge_data = json.load(f)
+                            
+                            if edge_data.get('signal_date') == effective_date:
+                                st.write(f"**{edge_name.upper()} Gate Samples:**")
+                                gate_samples = edge_data.get('gate_samples', [])
+                                for gs in gate_samples[:10]:
+                                    symbol = gs.get('symbol', '')
+                                    gate_pass = gs.get('gate_pass', False)
+                                    
+                                    # Format based on edge type
+                                    if 'iv_zscore' in gs:
+                                        details = f"z={gs.get('iv_zscore')}, rv_iv={gs.get('rv_iv_ratio')}, trend={gs.get('trend')}"
+                                    elif 'ivp' in gs:
+                                        details = f"IVp={gs.get('ivp')}, skew_pctl={gs.get('skew_pctl')}, is_flat={gs.get('is_flat')}"
+                                    else:
+                                        details = gs.get('reason', 'N/A')
+                                    
+                                    pass_icon = "✅" if gate_pass else "❌"
+                                    st.write(f"  {pass_icon} **{symbol}**: {details}")
+                        except Exception as e:
+                            st.write(f"Could not load {edge_name} data: {e}")
+                
+                # Raw JSON
+                with st.expander("Raw JSON"):
+                    st.json(meta)
+                    
+        except Exception as e:
+            st.error(f"Error loading run: {e}")
+
+
 def main():
     # SIDEBAR NAVIGATION
     with st.sidebar:
@@ -2068,7 +2199,7 @@ def main():
         
         page = st.radio(
             "Navigation",
-            ["📈 Dashboard", "🎯 Edge Portfolio", "📊 Blotter", "🔬 Backtest"],
+            ["📈 Dashboard", "🎯 Edge Portfolio", "📊 Blotter", "🔬 Backtest", "📜 Run Logs"],
             label_visibility="collapsed"
         )
         
@@ -2118,6 +2249,9 @@ def main():
         return
     elif page == "🔬 Backtest":
         render_backtest_tab()
+        return
+    elif page == "📜 Run Logs":
+        render_run_logs_tab()
         return
     
     # HEADLINE
