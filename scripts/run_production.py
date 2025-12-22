@@ -195,6 +195,9 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
     if watermark.is_stale:
         do_not_trade_reasons.append(f"DATA_STALE: {watermark.stale_reason}")
     
+    # Track if we successfully computed gate samples
+    gate_samples_computed = False
+    
     # 7. Run edges
     edges_results = []
     all_candidates = []
@@ -234,6 +237,14 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
                     json.dump(result, f, indent=2, default=str)
                 print(f"  Updated: {latest_path}")
                 
+                # Check if we got real gate samples (not just errors/skips with no data)
+                edge_gate_samples = result.get('gate_samples', [])
+                if edge_gate_samples and any(
+                    'iv_zscore' in gs or 'ivp' in gs or 'skew_pctl' in gs 
+                    for gs in edge_gate_samples
+                ):
+                    gate_samples_computed = True
+                
             except Exception as e:
                 print(f"  ERROR: {e}")
                 edges_results.append({
@@ -241,6 +252,11 @@ def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any
                     'candidate_count': 0,
                     'status': f'error: {e}'
                 })
+    
+    # Finalize trading_allowed: must have computed gate samples AND not stale
+    if not gate_samples_computed:
+        trading_allowed = False
+        do_not_trade_reasons.append("NO_GATE_SAMPLES: failed to compute real gate values")
     
     # 8. Build run summary
     run_summary = {

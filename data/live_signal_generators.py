@@ -77,9 +77,21 @@ def generate_iv_carry_mr_live(
         
         current_price = prices[-1]
         
-        # Compute ATM IV for each day in lookback (with diagnostic counters)
+        # Prefer price for effective_date, but fall back to most recent if missing
+        price_on_effective = prices_by_date.get(effective_date)
+        price_stale = False
+        if price_on_effective is not None:
+            current_price = price_on_effective
+        else:
+            # Use most recent available - flag it
+            sorted_dates = sorted(prices_by_date.keys())
+            if sorted_dates:
+                current_price = prices_by_date[sorted_dates[-1]]
+                price_stale = True
+        
+        # Compute ATM IV for each day in lookback (120 days per frozen spec)
         iv_history = []
-        days_with_iv = list(prices_by_date.keys())[-60:]  # Last 60 days with price data
+        days_with_iv = list(prices_by_date.keys())[-120:]  # Last 120 days with price data
         
         diag = {
             'days_attempted': len(days_with_iv),
@@ -138,8 +150,8 @@ def generate_iv_carry_mr_live(
         # Compute trend
         trend, ma_fast, ma_slow = compute_trend(prices, fast_window=20, slow_window=60)
         
-        # Gate sample
-        gate_pass = abs(iv_zscore) >= 2.0 and rv_iv_ratio < 1.0 and trend != 'neutral'
+        # Gate sample - only trigger on ELEVATED IV (z >= 2.0), not depleted
+        gate_pass = iv_zscore >= 2.0 and rv_iv_ratio < 1.0 and trend != 'neutral'
         gate_samples.append({
             'symbol': symbol,
             'iv_zscore': round(iv_zscore, 2),
@@ -213,6 +225,10 @@ def generate_iv_carry_mr_live(
         
         entry_credit = short_price - long_price
         max_loss_usd = (width * 100) - (entry_credit * 100)
+        
+        # Sanity check: skip if pricing is invalid
+        if entry_credit <= 0 or max_loss_usd <= 0:
+            continue
         
         candidates.append({
             'symbol': symbol,
@@ -333,6 +349,24 @@ def generate_flat_live(
                 'reason': 'could not load skew history',
             })
             continue
+        
+        # Validate cache is current for effective_date
+        cache_last_date_str = history.get('last_date') or history.get('last_updated_for')
+        if cache_last_date_str:
+            try:
+                from datetime import datetime as dt
+                cache_last_date = dt.fromisoformat(cache_last_date_str).date() if isinstance(cache_last_date_str, str) else cache_last_date_str
+                days_stale = (effective_date - cache_last_date).days
+                if days_stale > 5:  # Cache is more than 5 days stale
+                    gate_samples.append({
+                        'symbol': symbol,
+                        'status': 'skip',
+                        'reason': f'skew cache stale ({days_stale} days behind effective_date)',
+                        'cache_last_date': str(cache_last_date),
+                    })
+                    continue
+            except Exception:
+                pass  # Can't validate date, proceed with caution
         
         skew_history = history.get('skew', [])
         pctl_history = history.get('percentile', [])
