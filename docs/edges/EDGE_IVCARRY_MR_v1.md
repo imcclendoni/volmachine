@@ -1,8 +1,19 @@
 # EDGE: IV Carry MR v1
 
-> **Status**: LOCKED (2025-12-22)  
+> **Status**: LOCKED (spec frozen, 2025-12-22)  
+> **Deployment**: PRODUCTION-CANDIDATE (pending coverage artifacts + skip-rate remediation)  
 > **Universe**: SPY, QQQ, DIA, XLK, XLE  
 > **Strategy**: IV Mean-Reversion via Credit Spreads
+
+---
+
+## Terminology
+
+| Term | Definition |
+|------|------------|
+| **Signal** | Detector output (date, z-score, direction, trend) |
+| **TradeCandidate** | Signal + fully specified credit-spread structure (legs, strikes, expiry, max_loss_usd) |
+| **Executed Trade** | RiskEngine-approved TradeCandidate successfully simulated using flatfiles |
 
 ---
 
@@ -23,7 +34,6 @@
 
 ### Strike Selection
 ```python
-# Anchor to nearest $5 grid point, then find closest available
 anchor_strike = round(underlying_price / 5) * 5
 short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 ```
@@ -60,6 +70,8 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | `max_cluster_positions` | 3 (index_core), 1 (sectors) |
 | `dd_kill_pct` | 15% |
 
+> **Effective cap ≈ 3 concurrent positions** at full size due to max_total_risk_pct (6% ÷ 2% = 3).
+
 ---
 
 ## Confirmed Baseline (LOCKED)
@@ -72,6 +84,8 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | Profit Factor | **2.22** |
 | Total Return | +15.2% |
 | CAGR | 3.6% |
+
+> Trades per symbol reflect RiskEngine-executed trades, not raw signals.
 
 ### Walk-Forward Validation
 | Period | Trades | PF | Return |
@@ -97,7 +111,7 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | XLK | 6 | 5.11 | 67% |
 | XLE | 13 | 2.48 | 69% |
 
-> *DIA: PF=infinity (no losses). Treat as promising but fragile.
+> **DIA Caveat**: PF=∞ due to zero losses in sample. Treat as unstable—monitor forward. **Do not increase DIA sizing based on PF alone.**
 
 ---
 
@@ -107,8 +121,22 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 |--------|-------------|
 | **Production** | PF ≥ 1.3 AND DD ≤ 20% AND (≥20 trades OR ≥90% executable) |
 | **Marginal** | PF 1.1–1.3 OR low trade count |
-| **Quarantine** | Data-limited (high skip rate) |
+| **Quarantine** | Data-limited (skip rate > 10% OR clustering) |
 | **Excluded** | PF < 1.1 OR negative expectancy |
+
+### Executable Rate Definition
+```
+executable_rate = executed_trades / total_signals_loaded
+```
+- Denominator: signals after filtering for signal gates, per symbol
+- Data source: flatfiles only (no REST fallback)
+
+### Data Integrity Requirements
+- **Target**: skip rate ≤ 5%
+- **Allowed**: skip rate ≤ 10% only if:
+  - Not clustered in specific time periods
+  - Reason-coded
+  - Coverage artifacts present
 
 ---
 
@@ -120,6 +148,19 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | GLD | 0.67 | Negative expectancy |
 | XLF | 1.27 | Below 1.3 threshold |
 | TLT | 1.18 | Below 1.3 threshold |
+
+---
+
+## Remaining Validation Gates
+
+| Artifact | Status |
+|----------|--------|
+| Coverage report (% valid days per symbol) | ⬜ Pending |
+| Signal stats (signals/year, z-score distribution) | ⬜ Pending |
+| Tradeability report (flatfile pricing confirmation) | ⬜ Pending |
+| Skip rate remediation plan | ⬜ Pending |
+
+> Edge is **LOCKED**. These are engineering artifacts only—no edge logic changes.
 
 ---
 
@@ -140,4 +181,3 @@ short_strike = min(available_strikes, key=lambda x: abs(x - anchor_strike))
 | Signal | `edges/iv_carry_mr/signal.py` |
 | Backtest | `scripts/run_iv_carry_backtest.py` |
 | Baselines | `logs/edges/iv_carry_mr/locked_baselines/` |
- |
