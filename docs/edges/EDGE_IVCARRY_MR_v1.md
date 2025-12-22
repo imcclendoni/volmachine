@@ -1,7 +1,6 @@
 # EDGE: IV Carry MR v1
 
-> **Status**: LOCKED (spec frozen, 2025-12-22)  
-> **Deployment**: PRODUCTION-CANDIDATE (pending coverage artifacts + skip-rate remediation)  
+> **Status**: PRODUCTION (2025-12-22)  
 > **Universe**: SPY, QQQ, DIA, XLK, XLE  
 > **Strategy**: IV Mean-Reversion via Credit Spreads
 
@@ -151,16 +150,17 @@ executable_rate = executed_trades / total_signals_loaded
 
 ---
 
-## Remaining Validation Gates
+## Validation Artifacts ✅
 
-| Artifact | Status |
-|----------|--------|
-| Coverage report (% valid days per symbol) | ⬜ Pending |
-| Signal stats (signals/year, z-score distribution) | ⬜ Pending |
-| Tradeability report (flatfile pricing confirmation) | ⬜ Pending |
-| Skip rate remediation plan | ⬜ Pending |
+| Artifact | Status | Path |
+|----------|--------|------|
+| Coverage report | ✅ Complete | `validation/coverage_iv_carry_mr.jsonl` |
+| Missingness heatmap | ✅ Complete | `validation/missingness_heatmap_iv_carry_mr.json` |
+| Signal stats | ✅ Complete | `validation/signal_stats_iv_carry_mr.json` |
+| Tradeability report | ✅ Complete | `validation/tradeability_iv_carry_mr.json` |
+| Skip-rate remediation | ✅ Complete | `validation/skip_rate_remediation_iv_carry_mr.md` |
 
-> Edge is **LOCKED**. These are engineering artifacts only—no edge logic changes.
+> All artifacts in `logs/edges/iv_carry_mr/validation/`
 
 ---
 
