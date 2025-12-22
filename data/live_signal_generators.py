@@ -77,25 +77,38 @@ def generate_iv_carry_mr_live(
         
         current_price = prices[-1]
         
-        # Compute ATM IV for each day in lookback (need at least 30 days)
+        # Compute ATM IV for each day in lookback (with diagnostic counters)
         iv_history = []
         days_with_iv = list(prices_by_date.keys())[-60:]  # Last 60 days with price data
+        
+        diag = {
+            'days_attempted': len(days_with_iv),
+            'days_loaded': 0,
+            'days_with_expiry': 0,
+            'days_with_atm': 0,
+            'days_with_valid_iv': 0,
+            'errors': [],
+        }
         
         for d in days_with_iv:
             try:
                 price_on_day = prices_by_date.get(d, current_price)
-                provider.load_day(d)
+                rows = provider.load_day(d)
+                diag['days_loaded'] += 1
+                
                 iv = provider.compute_atm_iv(d, symbol, price_on_day)
                 if iv is not None:
                     iv_history.append((d, iv))
+                    diag['days_with_valid_iv'] += 1
             except Exception as e:
-                pass
+                diag['errors'].append(f"{d}: {str(e)[:50]}")
         
         if len(iv_history) < 30:
             gate_samples.append({
                 'symbol': symbol,
                 'status': 'skip',
                 'reason': f'insufficient IV history ({len(iv_history)} days)',
+                'diagnostics': diag,
             })
             continue
         
