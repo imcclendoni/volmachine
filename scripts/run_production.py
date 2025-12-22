@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 import uuid
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -79,6 +79,11 @@ def run_edge_signals(
     """
     Run signal generation for a specific edge.
     
+    NOTE: Currently reads from pre-computed backfill reports.
+    For "live" signals, you must first run the backfill up to effective_date:
+      - FLAT: python scripts/backfill_signals.py --end-date {effective_date}
+      - IV Carry MR: python scripts/backfill_iv_carry_signals.py --end-date {effective_date}
+    
     Returns the generated signals JSON.
     """
     from scripts.generate_daily_signals import generate_signals
@@ -91,6 +96,18 @@ def run_edge_signals(
         raise ValueError(f"Unknown edge: {edge}")
     
     result = generate_signals(edge, effective_date, reports_dir, output_dir)
+    
+    # Add diagnostic info
+    print(f"  Reports dir: {reports_dir}")
+    print(f"  Reports found: {result.get('reports_found', 0)}")
+    print(f"  Reports processed: {result.get('reports_processed', 0)}")
+    print(f"  Candidates: {result.get('candidate_count', 0)}")
+    
+    if result.get('reports_found', 0) == 0:
+        signal_date = effective_date - timedelta(days=1)
+        print(f"  ⚠️ No reports for signal_date {signal_date}")
+        print(f"     Run backfill to generate: backfill_*_signals.py --end-date {effective_date}")
+    
     return result
 
 
