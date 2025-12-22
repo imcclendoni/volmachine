@@ -71,20 +71,45 @@ def get_gate_samples(effective_date: date, universe: List[str]) -> List[Dict[str
     return samples
 
 
-def run_edge_signals(
+def run_edge_signals_live(
+    edge: str,
+    effective_date: date,
+    flatfiles_dir: Path,
+) -> Dict[str, Any]:
+    """
+    Run LIVE signal generation for a specific edge.
+    
+    Computes signals directly from flatfiles - no backfill dependency.
+    """
+    from data.live_signal_provider import LiveSignalProvider
+    from data.live_signal_generators import generate_iv_carry_mr_live
+    
+    provider = LiveSignalProvider(flatfiles_dir)
+    
+    if edge == 'iv_carry_mr':
+        universe = ['SPY', 'QQQ', 'DIA', 'XLK', 'XLE']
+        result = generate_iv_carry_mr_live(provider, effective_date, universe)
+    elif edge == 'flat':
+        # FLAT live not yet implemented - fall back to backfill mode
+        result = {
+            'error': 'FLAT live mode not yet implemented',
+            'source': 'live',
+            'candidate_count': 0,
+            'candidates': [],
+        }
+    else:
+        raise ValueError(f"Unknown edge: {edge}")
+    
+    return result
+
+
+def run_edge_signals_backfill(
     edge: str,
     effective_date: date,
     output_dir: Path
 ) -> Dict[str, Any]:
     """
-    Run signal generation for a specific edge.
-    
-    NOTE: Currently reads from pre-computed backfill reports.
-    For "live" signals, you must first run the backfill up to effective_date:
-      - FLAT: python scripts/backfill_signals.py --end-date {effective_date}
-      - IV Carry MR: python scripts/backfill_iv_carry_signals.py --end-date {effective_date}
-    
-    Returns the generated signals JSON.
+    Run signal generation from pre-computed backfill reports.
     """
     from scripts.generate_daily_signals import generate_signals
     
@@ -96,6 +121,7 @@ def run_edge_signals(
         raise ValueError(f"Unknown edge: {edge}")
     
     result = generate_signals(edge, effective_date, reports_dir, output_dir)
+    result['source'] = 'backfill'
     
     # Add diagnostic info
     print(f"  Reports dir: {reports_dir}")
@@ -106,14 +132,17 @@ def run_edge_signals(
     if result.get('reports_found', 0) == 0:
         signal_date = effective_date - timedelta(days=1)
         print(f"  ⚠️ No reports for signal_date {signal_date}")
-        print(f"     Run backfill to generate: backfill_*_signals.py --end-date {effective_date}")
     
     return result
 
 
-def run_production(dry_run: bool = False) -> Dict[str, Any]:
+def run_production(dry_run: bool = False, source: str = 'live') -> Dict[str, Any]:
     """
     Execute production run for all edges.
+    
+    Args:
+        dry_run: Don't write outputs
+        source: 'live' (compute from flatfiles) or 'backfill' (read reports)
     
     Returns run metadata and results.
     """
@@ -190,7 +219,10 @@ def run_production(dry_run: bool = False) -> Dict[str, Any]:
                 edge_output_dir = run_dir / edge
                 edge_output_dir.mkdir(parents=True, exist_ok=True)
                 
-                result = run_edge_signals(edge, watermark.effective_date, edge_output_dir)
+                if source == 'live':
+                    result = run_edge_signals_live(edge, watermark.effective_date, flatfiles_dir)
+                else:
+                    result = run_edge_signals_backfill(edge, watermark.effective_date, edge_output_dir)
                 
                 edges_results.append({
                     'edge_id': edge,
@@ -268,9 +300,11 @@ def run_production(dry_run: bool = False) -> Dict[str, Any]:
 def main():
     parser = argparse.ArgumentParser(description="Run production signal generation")
     parser.add_argument('--dry-run', action='store_true', help="Don't write outputs")
+    parser.add_argument('--source', choices=['live', 'backfill'], default='live',
+                        help="Signal source: 'live' (compute from flatfiles) or 'backfill' (read reports)")
     args = parser.parse_args()
     
-    run_production(dry_run=args.dry_run)
+    run_production(dry_run=args.dry_run, source=args.source)
 
 
 if __name__ == '__main__':
