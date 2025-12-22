@@ -108,8 +108,8 @@ class EdgeRegistry:
         # 1. Discover from docs/edges/EDGE_*_v1.md
         if self.docs_dir.exists():
             for doc_file in self.docs_dir.glob("EDGE_*_v1.md"):
-                # Extract edge_id from filename: EDGE_FLAT_v1.md -> flat
-                match = re.match(r'EDGE_([A-Z]+)_v\d+\.md', doc_file.name)
+                # Extract edge_id from filename: EDGE_FLAT_v1.md -> flat, EDGE_IVCARRY_MR_v1.md -> ivcarry_mr
+                match = re.match(r'EDGE_([A-Z_]+)_v\d+\.md', doc_file.name)
                 if match:
                     edge_id = match.group(1).lower()
                     if edge_id not in self._edges:

@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Generate Daily FLAT Signals
+Generate Daily Edge Signals
 
-Produces a JSON artifact for dashboard integration.
-Reads signal reports for a target date and outputs qualifying FLAT candidates.
+Produces JSON artifacts for dashboard integration.
+Reads signal reports for a target date and outputs qualifying candidates.
+
+Supported edges:
+- flat (FLAT v1)
+- iv_carry_mr (IV Carry MR v1)
 
 Usage:
     python3 scripts/generate_daily_signals.py --edge flat --date 2025-12-20
+    python3 scripts/generate_daily_signals.py --edge iv_carry_mr --date 2025-12-20
     python3 scripts/generate_daily_signals.py --edge flat  # Uses today's date
 """
 
@@ -133,6 +138,68 @@ def extract_flat_candidates(
     return candidates
 
 
+# ============ IV CARRY MR FUNCTIONS ============
+
+def get_ivcarry_universe() -> List[str]:
+    """Get the IV Carry MR production universe."""
+    return ['SPY', 'QQQ', 'DIA', 'XLK', 'XLE']
+
+
+def find_ivcarry_reports_for_date(reports_dir: Path, target_date: date) -> List[Path]:
+    """
+    Find IV Carry MR signal reports for a given execution date.
+    
+    Reports are named by signal_date (N), so for execution_date N+1,
+    we search for signal_date = target_date - 1.
+    """
+    from datetime import timedelta
+    signal_date = target_date - timedelta(days=1)
+    date_str = signal_date.strftime("%Y-%m-%d")
+    
+    # IV Carry MR reports format: YYYY-MM-DD_SYMBOL_IVCMR.json
+    pattern = f"{date_str}_*_IVCMR.json"
+    matches = list(reports_dir.glob(pattern))
+    
+    return matches
+
+
+def extract_ivcarry_candidates(
+    report_path: Path,
+    universe: List[str]
+) -> List[Dict[str, Any]]:
+    """Extract IV Carry MR candidates from a report."""
+    candidates = []
+    
+    try:
+        with open(report_path) as f:
+            report = json.load(f)
+    except:
+        return []
+    
+    sig = report.get('signal', report)
+    symbol = sig.get('symbol')
+    
+    if symbol not in universe:
+        return []
+    
+    # Build candidate
+    candidates.append({
+        'symbol': symbol,
+        'signal_date': sig.get('signal_date'),
+        'execution_date': report.get('execution_date'),
+        'iv_zscore': sig.get('iv_zscore'),
+        'direction': sig.get('direction'),
+        'trend': sig.get('trend'),
+        'rv_iv_ratio': sig.get('rv_iv_ratio'),
+        'underlying_price': sig.get('underlying_price'),
+        'target_expiry': sig.get('target_expiry'),
+        'edge_strength': abs(sig.get('iv_zscore', 2.0)) / 2.0,
+        'rationale': f"IV z-score {sig.get('iv_zscore', 0):.2f}, {sig.get('direction')} ({sig.get('trend')} trend)"
+    })
+    
+    return candidates
+
+
 def generate_signals(
     edge: str,
     target_date: date,
@@ -141,39 +208,50 @@ def generate_signals(
 ) -> Dict[str, Any]:
     """Generate signals JSON for a given edge and date."""
     
-    if edge != 'flat':
-        raise ValueError(f"Unsupported edge: {edge}. Only 'flat' is currently supported.")
-    
-    config = load_config()
-    universe = get_flat_universe(config)
-    ivp_gate = get_ivp_gate(config)
-    
-    # Find ALL reports for this date
-    report_paths = find_reports_for_date(reports_dir, target_date)
-    
-    # Extract candidates from all reports
-    candidates = []
-    reports_processed = 0
-    for report_path in report_paths:
-        try:
-            with open(report_path) as f:
-                report = json.load(f)
+    if edge == 'flat':
+        config = load_config()
+        universe = get_flat_universe(config)
+        ivp_gate = get_ivp_gate(config)
+        regime_gate = {'max_atm_iv_pctl': ivp_gate}
+        
+        report_paths = find_reports_for_date(reports_dir, target_date)
+        
+        candidates = []
+        reports_processed = 0
+        for report_path in report_paths:
+            try:
+                with open(report_path) as f:
+                    report = json.load(f)
+                reports_processed += 1
+                candidates.extend(extract_flat_candidates(report, universe, ivp_gate))
+            except Exception as e:
+                print(f"  Warning: Failed to process {report_path}: {e}")
+        
+    elif edge == 'iv_carry_mr':
+        universe = get_ivcarry_universe()
+        regime_gate = {'iv_zscore_threshold': 2.0, 'rv_iv_max': 1.0}
+        
+        # IV Carry MR reports are in logs/backfill/iv_carry_mr/reports
+        ivcarry_reports_dir = Path('logs/backfill/iv_carry_mr/reports')
+        report_paths = find_ivcarry_reports_for_date(ivcarry_reports_dir, target_date)
+        
+        candidates = []
+        reports_processed = 0
+        for report_path in report_paths:
             reports_processed += 1
-            candidates.extend(extract_flat_candidates(report, universe, ivp_gate))
-        except Exception as e:
-            print(f"  Warning: Failed to process {report_path}: {e}")
+            candidates.extend(extract_ivcarry_candidates(report_path, universe))
+    else:
+        raise ValueError(f"Unsupported edge: {edge}. Supported: flat, iv_carry_mr")
     
     # Build output (dashboard contract schema)
     output = {
         'edge_id': edge,
         'edge_version': 'v1.0',
         'generated_at': datetime.now().isoformat(),
-        'report_date': None,  # Will be set from first candidate
+        'report_date': None,
         'execution_date': target_date.isoformat(),
         'universe': universe,
-        'regime_gate': {
-            'max_atm_iv_pctl': ivp_gate
-        },
+        'regime_gate': regime_gate,
         'reports_found': len(report_paths),
         'reports_processed': reports_processed,
         'candidates': candidates,
@@ -182,7 +260,7 @@ def generate_signals(
     
     # Set report_date from first candidate if available
     if candidates:
-        output['report_date'] = candidates[0].get('report_date')
+        output['report_date'] = candidates[0].get('report_date') or candidates[0].get('signal_date')
     
     # Write output
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -195,7 +273,7 @@ def generate_signals(
     with open(dated_path, 'w') as f:
         json.dump(output, f, indent=2, default=str)
     
-    print(f"Generated {len(candidates)} FLAT signals for {target_date}")
+    print(f"Generated {len(candidates)} {edge.upper()} signals for {target_date}")
     print(f"  Reports processed: {reports_processed}")
     print(f"  Output: {output_path}")
     
@@ -204,8 +282,8 @@ def generate_signals(
 
 def main():
     parser = argparse.ArgumentParser(description="Generate daily edge signals")
-    parser.add_argument('--edge', required=True, choices=['flat'], 
-                        help="Edge type (only 'flat' supported)")
+    parser.add_argument('--edge', required=True, choices=['flat', 'iv_carry_mr'], 
+                        help="Edge type")
     parser.add_argument('--date', type=str, default=None,
                         help="Target date (YYYY-MM-DD), defaults to today")
     parser.add_argument('--reports-dir', type=str, default='logs/backfill/v7/reports',
@@ -229,19 +307,22 @@ def main():
     result = generate_signals(args.edge, target_date, reports_dir, output_dir)
     
     # Print summary
-    print(f"\n=== FLAT Signal Summary for {target_date} ===")
+    print(f"\n=== {args.edge.upper()} Signal Summary for {target_date} ===")
     print(f"Universe: {len(result['universe'])} symbols")
-    ivp_gate = result.get('regime_gate', {}).get('max_atm_iv_pctl', 'N/A')
-    print(f"IVp Gate: <= {ivp_gate}")
     print(f"Candidates found: {result['candidate_count']}")
     
     if result['candidates']:
         print("\nCandidates:")
         for c in result['candidates']:
-            debit = c['structure'].get('entry_debit', 0) or 0
-            print(f"  {c['symbol']}: IVp={c['atm_iv_percentile']:.0f}, "
-                  f"skew_pctl={c['skew_percentile']:.0f}, "
-                  f"debit=${debit:.2f}")
+            if args.edge == 'flat':
+                debit = c.get('structure', {}).get('entry_debit', 0) or 0
+                print(f"  {c['symbol']}: IVp={c.get('atm_iv_percentile', 0):.0f}, "
+                      f"skew_pctl={c.get('skew_percentile', 0):.0f}, "
+                      f"debit=${debit:.2f}")
+            elif args.edge == 'iv_carry_mr':
+                print(f"  {c['symbol']}: z={c.get('iv_zscore', 0):.2f}, "
+                      f"{c.get('direction')}, "
+                      f"trend={c.get('trend')}")
 
 
 if __name__ == '__main__':
