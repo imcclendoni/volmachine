@@ -459,15 +459,17 @@ def generate_flat_live(
         if current_iv is None:
             current_iv = 0.2  # Default
         
-        # Compute IVp from recent IV history
+        # Compute IVp from recent IV history (using historical prices for each day)
         iv_history = []
         for d in lookback_dates[:30]:
-            iv = provider.compute_atm_iv(d, symbol, price)
+            hist_prices = provider.get_underlying_prices(symbol, [d])
+            hist_price = hist_prices[0] if hist_prices and hist_prices[0] else price
+            iv = provider.compute_atm_iv(d, symbol, hist_price)
             if iv is not None:
                 iv_history.append(iv)
         
         ivp = 50.0  # default
-        if iv_history:
+        if iv_history and len(iv_history) >= 10:
             ivp = sum(1 for iv in iv_history if iv <= current_iv) / len(iv_history) * 100
         
         # Gate checks (using live-computed values)
