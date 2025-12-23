@@ -241,11 +241,16 @@ def generate_iv_carry_mr_live(
         if not gate_pass:
             continue
         
+        # Track rejection reason if we fail to produce candidate despite gate_pass
+        reject_reason = None
+        
         # Determine direction
         if iv_zscore >= 2.0:
             direction = 'SELL_CALLS' if trend == 'bearish' else 'SELL_PUTS'
         else:
-            continue  # Only sell premium on elevated IV
+            reject_reason = 'iv_zscore_below_threshold'
+            gate_samples[-1]['candidate_reject_reason'] = reject_reason
+            continue
         
         # Find target expiry (30-45 DTE)
         expiries = provider.bar_store.get_available_expiries(effective_date, symbol)
@@ -256,6 +261,8 @@ def generate_iv_carry_mr_live(
                 break
         
         if target_expiry is None:
+            reject_reason = 'no_target_expiry_30_45'
+            gate_samples[-1]['candidate_reject_reason'] = reject_reason
             continue
         
         # Build credit spread structure
@@ -264,6 +271,8 @@ def generate_iv_carry_mr_live(
         # Get available strikes
         strikes_data = provider.bar_store.get_available_strikes(effective_date, symbol, target_expiry)
         if not strikes_data:
+            reject_reason = 'no_strikes_for_expiry'
+            gate_samples[-1]['candidate_reject_reason'] = reject_reason
             continue
         
         available_strikes = sorted(strikes_data.keys())
@@ -289,6 +298,8 @@ def generate_iv_carry_mr_live(
                 long_strike = short_strike + width
             
             if long_strike not in available_strikes:
+                reject_reason = 'long_strike_not_found'
+                gate_samples[-1]['candidate_reject_reason'] = reject_reason
                 continue
         
         # Get prices for max_loss calculation
@@ -296,6 +307,8 @@ def generate_iv_carry_mr_live(
         long_bar = strikes_data.get(long_strike, {}).get(option_type)
         
         if not short_bar or not long_bar:
+            reject_reason = 'missing_short_or_long_bar'
+            gate_samples[-1]['candidate_reject_reason'] = reject_reason
             continue
         
         short_price = short_bar.get('close', 0) or short_bar.get('c', 0)
@@ -306,6 +319,8 @@ def generate_iv_carry_mr_live(
         
         # Sanity check: skip if pricing is invalid
         if entry_credit <= 0 or max_loss_usd <= 0:
+            reject_reason = f'invalid_pricing:entry_credit={entry_credit:.2f},max_loss={max_loss_usd:.2f}'
+            gate_samples[-1]['candidate_reject_reason'] = reject_reason
             continue
         
         candidates.append({
