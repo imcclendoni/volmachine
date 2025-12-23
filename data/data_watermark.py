@@ -89,9 +89,9 @@ def get_data_watermark(
         # But conservatively, expect at least yesterday
         pass
     
-    # Check staleness (more than 1 trading day behind)
+    # Check staleness (more than 3 trading days behind to allow for weekends/publishing delays)
     days_behind = (expected_max_date - data_max_date).days
-    is_stale = days_behind > 1
+    is_stale = days_behind > 3
     
     stale_reason = None
     if is_stale:
