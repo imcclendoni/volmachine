@@ -31,21 +31,23 @@ def compute_skew_from_flatfiles(
     symbol: str,
     trade_date: date,
     underlying_price: float,
-) -> Optional[float]:
+) -> Optional[dict]:
     """
     Compute put/call skew proxy from flatfiles for a single date.
     
-    Skew = (OTM put IV) - (ATM IV)
+    Skew = (OTM put IV proxy) - (ATM IV proxy)
     Where OTM put is ~5% below ATM.
     
-    Returns skew value or None if insufficient data.
+    Returns dict with skew value and metadata, or None if insufficient data.
     """
     # Find target expiry (30-45 DTE)
     expiries = provider.bar_store.get_available_expiries(trade_date, symbol)
     target_expiry = None
+    target_dte = None
     for exp_date, dte in expiries:
         if 30 <= dte <= 45:
             target_expiry = exp_date
+            target_dte = dte
             break
     
     if target_expiry is None:
@@ -73,8 +75,6 @@ def compute_skew_from_flatfiles(
         return None
     
     # Compute IV proxy using straddle approximation
-    # ATM IV ≈ atm_price / (underlying * sqrt(T/365)) * sqrt(2*pi)
-    # For simplicity, use price ratio as skew proxy
     dte = (target_expiry - trade_date).days
     if dte <= 0:
         return None
@@ -87,7 +87,18 @@ def compute_skew_from_flatfiles(
     otm_put_iv_proxy = otm_put_price / (underlying_price * sqrt_t * (1 - distance)) * 2.5 if distance < 1 else 0
     
     skew = otm_put_iv_proxy - atm_iv_proxy
-    return skew
+    
+    return {
+        'skew': skew,
+        'target_expiry': target_expiry.isoformat(),
+        'dte': target_dte,
+        'atm_strike': atm_strike,
+        'otm_put_strike': otm_put_strike,
+        'atm_price': atm_price,
+        'otm_put_price': otm_put_price,
+        'atm_iv_proxy': round(atm_iv_proxy, 4),
+        'otm_put_iv_proxy': round(otm_put_iv_proxy, 4),
+    }
 
 
 def generate_iv_carry_mr_live(
@@ -126,10 +137,12 @@ def generate_iv_carry_mr_live(
     for symbol in universe:
         symbols_scanned += 1
         
-        # Get underlying prices for lookback (keep as dict for proper lookup)
+        # Get underlying prices for lookback - maintain chronological order
         prices_raw = provider.get_underlying_prices(symbol, lookback_dates)
-        prices_by_date = {lookback_dates[i]: p for i, p in enumerate(prices_raw) if p is not None}
-        prices = list(prices_by_date.values())
+        # Build ordered list aligned with lookback_dates (chronological)
+        prices_ordered = [(d, p) for d, p in zip(lookback_dates, prices_raw) if p is not None]
+        prices_by_date = {d: p for d, p in prices_ordered}
+        prices = [p for d, p in prices_ordered]  # Chronological order
         
         if len(prices) < 60:
             gate_samples.append({
@@ -139,6 +152,7 @@ def generate_iv_carry_mr_live(
             })
             continue
         
+        # Current price is the last available (chronological)
         current_price = prices[-1]
         
         # Prefer price for effective_date, but fall back to most recent if missing
@@ -415,15 +429,18 @@ def generate_flat_live(
             continue
         
         # Compute today's skew from flatfiles
-        current_skew = compute_skew_from_flatfiles(provider, symbol, effective_date, price)
+        skew_result = compute_skew_from_flatfiles(provider, symbol, effective_date, price)
         
-        if current_skew is None:
+        if skew_result is None:
             gate_samples.append({
                 'symbol': symbol,
                 'status': 'skip',
                 'reason': 'could not compute current skew from flatfiles',
             })
             continue
+        
+        current_skew = skew_result['skew']
+        skew_metadata = skew_result  # Store for transparency
         
         # Build skew history from last 60 trading days for percentile calculation
         lookback_dates = provider.iter_past_trading_days(effective_date, 60)
@@ -435,9 +452,9 @@ def generate_flat_live(
             hist_prices = provider.get_underlying_prices(symbol, [d])
             hist_price = hist_prices[0] if hist_prices and hist_prices[0] else price
             
-            hist_skew = compute_skew_from_flatfiles(provider, symbol, d, hist_price)
-            if hist_skew is not None:
-                skew_history.append(hist_skew)
+            hist_skew_result = compute_skew_from_flatfiles(provider, symbol, d, hist_price)
+            if hist_skew_result is not None:
+                skew_history.append(hist_skew_result['skew'])
         
         if len(skew_history) < 20:
             gate_samples.append({
@@ -493,6 +510,11 @@ def generate_flat_live(
             'is_flat': is_flat,
             'is_reverting': is_reverting,
             'gate_pass': gate_pass,
+            # Transparency metadata
+            'skew_target_expiry': skew_metadata.get('target_expiry'),
+            'skew_dte': skew_metadata.get('dte'),
+            'skew_atm_strike': skew_metadata.get('atm_strike'),
+            'skew_otm_put_strike': skew_metadata.get('otm_put_strike'),
         })
         
         if not gate_pass:
