@@ -637,6 +637,7 @@ def generate_flat_live(
             'skew_pctl_threshold': 10,
         },
         'skew_method': 'price_proxy_v1',  # Explicit method tag
+        'spec_warning': 'FLAT live uses price-based skew proxy which may differ from backtested IV-based skew. Equivalence not yet validated.',
         'data_snapshot': provider.get_data_proof(),
         'gate_samples': gate_samples,
         'candidates': candidates,
