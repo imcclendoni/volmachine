@@ -86,13 +86,14 @@ def main():
     print("╚══════════════════════════════════════════════════════════╝")
     print()
     
-    # Determine date range
+    # Determine date range - download up to today, tolerate 403s for unpublished dates
     today = date.today()
     last_trading = get_last_trading_day(today)
     start_date = last_trading - timedelta(days=args.days_back)
     
     print(f"Today: {today}")
-    print(f"Last trading day: {last_trading}")
+    print(f"Target end date: {last_trading}")
+    print(f"(Note: 403 errors for future dates are expected and handled)")
     print()
     
     # Step 1: Download flatfiles
