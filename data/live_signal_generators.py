@@ -155,7 +155,7 @@ def generate_iv_carry_mr_live(
         
         # Compute ATM IV for each day in lookback (120 days per frozen spec)
         iv_history = []
-        days_with_iv = list(prices_by_date.keys())[-120:]  # Last 120 days with price data
+        days_with_iv = sorted(prices_by_date.keys())[-120:]  # Last 120 days with price data (sorted)
         
         diag = {
             'days_attempted': len(days_with_iv),
@@ -350,6 +350,7 @@ def generate_iv_carry_mr_live(
             'iv_zscore_threshold': 2.0,
             'rv_iv_max': 1.0,
         },
+        'iv_method': 'atm_iv_from_flatfiles',  # Explicit method tag
         'data_snapshot': provider.get_data_proof(),
         'gate_samples': gate_samples,
         'candidates': candidates,
@@ -428,7 +429,8 @@ def generate_flat_live(
         lookback_dates = provider.iter_past_trading_days(effective_date, 60)
         skew_history = []
         
-        for d in lookback_dates[:30]:  # Only compute 30 days for speed in live mode
+        recent_skew_days = lookback_dates[-30:]  # Most recent 30 days
+        for d in recent_skew_days:
             provider.load_day(d)
             hist_prices = provider.get_underlying_prices(symbol, [d])
             hist_price = hist_prices[0] if hist_prices and hist_prices[0] else price
@@ -461,7 +463,9 @@ def generate_flat_live(
         
         # Compute IVp from recent IV history (using historical prices for each day)
         iv_history = []
-        for d in lookback_dates[:30]:
+        recent_lookback = lookback_dates[-30:]  # Most recent 30 days
+        for d in recent_lookback:
+            provider.load_day(d)  # Ensure option bars are loaded
             hist_prices = provider.get_underlying_prices(symbol, [d])
             hist_price = hist_prices[0] if hist_prices and hist_prices[0] else price
             iv = provider.compute_atm_iv(d, symbol, hist_price)
@@ -549,7 +553,7 @@ def generate_flat_live(
             'signal_date': signal_date.isoformat(),
             'execution_date': execution_date.isoformat(),
             'atm_iv_percentile': round(ivp, 1),
-            'skew_percentile': round(current_pctl, 1),
+            'skew_percentile': round(skew_percentile, 1),
             'skew_delta': round(skew_delta, 4),
             'current_skew': round(current_skew, 4),
             'underlying_price': round(price, 2),
@@ -578,8 +582,8 @@ def generate_flat_live(
                     }
                 ]
             },
-            'edge_strength': round((100 - current_pctl) / 100, 2),
-            'rationale': f"FLAT: skew at {current_pctl:.0f}th pctl, reverting (Δ={skew_delta:.4f}). IVp {ivp:.0f} (gate: {ivp_gate})"
+            'edge_strength': round((100 - skew_percentile) / 100, 2),
+            'rationale': f"FLAT: skew at {skew_percentile:.0f}th pctl, reverting (Δ={skew_delta:.4f}). IVp {ivp:.0f} (gate: {ivp_gate})"
         })
     
     provider._data_proof['symbols_scanned'] = symbols_scanned
@@ -595,6 +599,7 @@ def generate_flat_live(
             'max_atm_iv_pctl': ivp_gate,
             'skew_pctl_threshold': 10,
         },
+        'skew_method': 'price_proxy_v1',  # Explicit method tag
         'data_snapshot': provider.get_data_proof(),
         'gate_samples': gate_samples,
         'candidates': candidates,
